@@ -8,13 +8,14 @@
  var menu=null,hold=null,held=false,toastTimer=null,hasApps=false;
  var tilesHash='',focusedEl=null,loadingApps=false;
  var defaults=['9Ur5IzDKqV.TizenYouTube','org.tizen.netflix-app','evKhCgZelL.AmazonIgnitionLauncher2','MCmYXNxgcu.DisneyPlus','5b8c3eb16b.BeamCTVDev','Jz7aUrV2Q4.Twitch'];
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{}};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{}};
  try{
   var saved=JSON.parse(localStorage.getItem(key));
   if(saved&&Array.isArray(saved.order)){
    prefs.order=saved.order;prefs.reduceMotion=saved.reduceMotion===true;
    prefs.glow=saved.glow!==false;prefs.theme=saved.theme==='light'?'light':'dark';
    if(saved.inputNames&&typeof saved.inputNames==='object')prefs.inputNames=saved.inputNames;
+   if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
   }
  }catch(e){}
 
@@ -22,7 +23,13 @@
  function toast(s){$('toast').textContent=s;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(function(){$('toast').classList.add('hidden');},4500);}
  function failure(e){toast('TV : '+(e.message||e.name||String(e)));}
  function el(tag,cls,text){var n=document.createElement(tag);n.className=cls||'';if(text!==undefined)n.textContent=text;return n;}
- function launch(id){if(preview){toast('Aperçu : '+id);return;}Apps.launch(id).catch(failure);}
+ // Anti double-appui : un même lancement n'est pas renvoyé pendant 1,5 s.
+ var lastLaunch={id:'',at:0};
+ function launch(id){
+  if(preview){toast('Aperçu : '+id);return;}
+  var now=Date.now();if(lastLaunch.id===id&&now-lastLaunch.at<1500)return;lastLaunch={id:id,at:now};
+  Apps.launch(id).catch(failure);
+ }
  function appearance(){
   $('stage').classList.toggle('reduce-motion',prefs.reduceMotion);
   $('stage').classList.toggle('no-glow',!prefs.glow);
@@ -225,31 +232,61 @@
    b.setAttribute('aria-label',inputLabel(a)+(a.connected!==undefined?(a.connected?', en fonction':', éteint'):''));
    b.onclick=function(){section=2;index=i;activate();};row.appendChild(b);
   });
+  // La rangée vient d'être reconstruite : on remet le focus dessus (sinon il disparaît).
+  if(section===2&&!menu)focus();
+ }
+
+ // Construit la liste des sources à partir de la réponse VIDEOSOURCE.
+ function buildInputs(info){
+  var list=[],seen={},status=Inputs.hdmiStatus(info);
+  Object.keys(status).forEach(function(n){n=Number(n);if(seen[n])return;seen[n]=true;list.push({hdmi:n,label:'HDMI '+n,connected:status[n]});});
+  list.sort(function(a,b){return a.hdmi-b.hdmi;});list.push({id:'org.tizen.tv-viewer',label:'Télévision'});
+  return list;
+ }
+ function sameInputs(a,b){
+  if(a.length!==b.length)return false;
+  for(var i=0;i<a.length;i++)if(a[i].hdmi!==b[i].hdmi||a[i].connected!==b[i].connected)return false;
+  return true;
  }
 
  // ── HDMI status: instant (TV event) + every 10s + on return ───────────────────────────────────
- function refreshInputs(){
-  if(preview||!window.Inputs)return;
-  Inputs.sources().then(function(info){
-   var changed=false;
-   inputs.forEach(function(a){
-    if(!a.hdmi)return;
-    var on=(info.connected||[]).some(function(c){return c.type==='HDMI'&&c.number===a.hdmi;});
-    if(a.connected!==on){a.connected=on;changed=true;}
-   });
-   if(changed)renderInputs();
+ // Rien n'est interrogé pendant qu'une autre app (jeu, film…) est au premier plan.
+ function refreshInputs(fresh){
+  if(preview||!window.Inputs||document.hidden)return;
+  Inputs.sources(fresh).then(function(info){
+   var next=buildInputs(info);
+   if(!sameInputs(inputs,next)){inputs=next;renderInputs();}
   },function(){});
  }
 
+ var GAMING=/console|pc|playstation|xbox|switch|raspberry/i;
+ var METHODS={viewer:'TV Samsung (Mode Jeu, PC…)',switch:'Changer de source seulement'};
+ function inputMethod(a){return prefs.inputMethods[a.hdmi]==='switch'?'switch':'viewer';}
+
  function editInput(){
   var a=inputs[index];if(!a||!a.hdmi)return;
-  var cur=inputLabel(a);
+  var cur=inputLabel(a),m=inputMethod(a);
+  openMenu(prefs.inputNames[a.hdmi]?cur+' · HDMI '+a.hdmi:cur,[
+   ['Renommer…',function(){renameInput(a);}],
+   ['Ouverture : '+METHODS[m],function(){
+    prefs.inputMethods[a.hdmi]=m==='viewer'?'switch':'viewer';save();
+    toast('Ouverture : '+METHODS[prefs.inputMethods[a.hdmi]]);
+   }],
+   ['Type d\'appareil et Mode Jeu (menu Samsung)',function(){if(preview){toast('Aperçu : sources Samsung');return;}Inputs.openPicker().catch(failure);}],
+   ['Annuler',function(){}]
+  ]);
+ }
+
+ function renameInput(a){
   var options=INPUT_PRESETS.map(function(name){
    if(name==='Retirer le nom personnalisé')return[name,function(){delete prefs.inputNames[a.hdmi];save();renderInputs();}];
    if(name==='Annuler')return[name,function(){}];
-   return[name,function(){prefs.inputNames[a.hdmi]=name;save();renderInputs();toast('Renommé : '+name);}];
+   return[name,function(){
+    prefs.inputNames[a.hdmi]=name;save();renderInputs();
+    toast(GAMING.test(name)?'Renommé : '+name+'. Astuce : dans Sources Samsung, réglez son type d\'appareil sur '+(/pc|raspberry/i.test(name)?'PC':'Console de jeu')+' et activez Mode Jeu auto.':'Renommé : '+name);
+   }];
   });
-  openMenu('Renommer "'+cur+'"',options);
+  openMenu('Renommer "'+inputLabel(a)+'"',options);
  }
 
  function nodes(){return section===0?$('toolbar').children:section===1?$('tiles').querySelectorAll('.app'):$('input-row').children;}
@@ -345,7 +382,14 @@
    if(editing||all)editApp();else if(shown[index])launch(shown[index].id);
   }else if(inputs[index]){
    var a=inputs[index];
-   if(a.hdmi){if(preview){toast('Aperçu : '+a.label);return;}Inputs.open(a.hdmi,'switch+viewer').catch(failure);}
+   if(a.hdmi){
+    var name=inputLabel(a);
+    if(preview){toast('Aperçu : passage sur '+name);return;}
+    toast(a.connected?'Passage sur '+name+'…':name+' semble éteint, passage quand même…');
+    Inputs.open(a.hdmi,inputMethod(a)).then(function(r){
+     if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
+    },failure);
+   }
    else launch(a.id);
   }
  }
@@ -384,6 +428,7 @@
  document.addEventListener('keyup',function(e){if(e.keyCode!==13)return;clearTimeout(hold);hold=null;if(!held)activate();held=false;});
  window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;});
 
+ var appsLoadedAt=0,installedIds='';
  function load(){
   if(preview){
    installed=[
@@ -406,24 +451,30 @@
    installed=Apps.launchable(list).filter(function(a){return Apps.describe(a).consumer||defaults.indexOf(a.id)>=0;});
    if(!hasApps){section=1;index=0;hasApps=true;}
    var nativeNetflix=appById('org.tizen.netflix-app');if(nativeNetflix)installed=installed.filter(function(a){return a.id!=='RN1MCdNq8t.Netflix';});
-   tilesHash='';render();
+   // Rien de neuf (retour sur l'accueil) : on ne reconstruit pas les tuiles, pas de clignotement.
+   var ids=installed.map(function(a){return a.id+'|'+a.iconPath;}).join(',');
+   if(ids===installedIds&&tilesHash)return;
+   installedIds=ids;tilesHash='';render();
   },function(e){loadingApps=false;failure(e);});
-  Inputs.sources().then(function(info){
-   inputs=[];var seen={};
-   (info.connected||[]).concat(info.disconnected||[]).forEach(function(s){
-    if(s.type!=='HDMI'||seen[s.number])return;seen[s.number]=true;
-    inputs.push({hdmi:s.number,label:'HDMI '+s.number,connected:(info.connected||[]).some(function(c){return c.type==='HDMI'&&c.number===s.number;})});
-   });
-   inputs.sort(function(a,b){return a.hdmi-b.hdmi;});inputs.push({id:'org.tizen.tv-viewer',label:'Télévision'});renderInputs();
+  appsLoadedAt=Date.now();
+  Inputs.sources(true).then(function(info){
+   inputs=buildInputs(info);renderInputs();
   },function(){inputs=[{id:'org.tizen.SMSourceAPP',label:'Ouvrir les sources'},{id:'org.tizen.tv-viewer',label:'Télévision'}];renderInputs();});
  }
 
  if(preview)$('preview').textContent='Aperçu navigateur';
  function scale(){if(preview)$('stage').style.transform='scale('+Math.min(window.innerWidth/1920,window.innerHeight/1080)+')';}
- document.addEventListener('visibilitychange',function(){if(!document.hidden){clock();refreshInputs();}});
+ // Retour sur l'accueil : heure, sources, et apps (nouvelles installations) au plus une fois par minute.
+ document.addEventListener('visibilitychange',function(){
+  if(document.hidden){clearTimeout(hold);hold=null;held=false;return;}
+  clock();refreshInputs(true);
+  if(!preview&&Date.now()-appsLoadedAt>60000)load();
+ });
  // La TV prévient dès qu'un appareil HDMI s'allume ou s'éteint : la tuile change aussitôt.
- if(!preview){try{tizen.systeminfo.addPropertyValueChangeListener('VIDEOSOURCE',function(){refreshInputs();});}catch(e){}}
+ if(!preview){try{tizen.systeminfo.addPropertyValueChangeListener('VIDEOSOURCE',function(){Inputs.invalidate();refreshInputs(true);});}catch(e){}}
  window.addEventListener('resize',scale);
- setInterval(refreshInputs,10000);
- scale();appearance();clock();setInterval(clock,30000);section=1;toolbar();load();
+ setInterval(function(){refreshInputs(false);},10000);
+ // Horloge calée sur le changement de minute (et non plus jusqu'à 30 s de retard).
+ function scheduleClock(){var d=new Date();setTimeout(function(){clock();scheduleClock();},60500-d.getSeconds()*1000-d.getMilliseconds());}
+ scale();appearance();clock();scheduleClock();section=1;toolbar();load();
 }());

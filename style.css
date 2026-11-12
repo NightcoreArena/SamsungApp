@@ -164,3 +164,6 @@ footer { left:104px;right:104px; }
 .input.connected.focused { background:linear-gradient(145deg,rgba(77,182,255,.30),rgba(77,182,255,.10)),var(--focus-fill);box-shadow:0 0 0 2px var(--focus),0 0 34px rgba(77,182,255,.45); }
 /* HDMI éteint : discret. */
 .input:not(.connected) .input-symbol { opacity:.55; }
+/* Message : opaque et placé entre les apps et les sources, pour rester lisible. */
+#toast { bottom:auto;top:690px;padding:18px 24px;background:#1b1d21;font-size:24px; }
+.light #toast { background:#fffdf8; }

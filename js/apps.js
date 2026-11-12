@@ -19,7 +19,7 @@
 
     function withTimeout(promise, ms, what) {
         return new Promise(function (resolve, reject) {
-            var timer = setTimeout(function () { reject(new Error(what + ': the TV did not respond')); }, ms);
+            var timer = setTimeout(function () { reject(new Error(what + ' : la TV ne répond pas')); }, ms);
             promise.then(function (v) { clearTimeout(timer); resolve(v); },
                 function (e) { clearTimeout(timer); reject(e); });
         });
@@ -36,13 +36,13 @@
     function getInstalledApps() {
         return withTimeout(new Promise(function (resolve, reject) {
             tizen.application.getAppsInfo(resolve, reject);
-        }), 8000, 'App list');
+        }), 8000, 'Liste des apps');
     }
 
     function launch(appId) {
         return withTimeout(new Promise(function (resolve, reject) {
             tizen.application.launch(appId, resolve, reject);
-        }), 8000, 'Launch');
+        }), 8000, 'Lancement');
     }
 
     function isConsumer(app) {

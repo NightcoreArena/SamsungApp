@@ -1,9 +1,24 @@
-/* HDMI inputs via tizen.systeminfo (VIDEOSOURCE) and tizen.tvwindow. */
+/* HDMI inputs via tizen.systeminfo (VIDEOSOURCE) and tizen.tvwindow.
+ *
+ * Ouverture d'une source (méthode « viewer », par défaut) :
+ *   1. tvwindow.setSource() bascule l'entrée de la TV ;
+ *   2. courte pause, le temps que la TV prenne la source ;
+ *   3. lancement du lecteur TV natif de Samsung (org.tizen.tv-viewer).
+ * C'est la TV elle-même qui affiche alors l'appareil : ses réglages par entrée
+ * (Mode Jeu auto / ALLM, type d'appareil PC ou console, Input Signal Plus, VRR)
+ * s'appliquent comme si l'on avait choisi la source dans le menu Samsung.
+ * Si une étape échoue, on ouvre le sélecteur de sources Samsung : l'utilisateur
+ * n'est jamais bloqué.
+ */
 (function () {
     'use strict';
 
     var VIEWER_APP = 'org.tizen.tv-viewer';
-    var FULL = ['0px', '0px', '1920px', '1080px'];
+    var SOURCE_APP = 'org.tizen.SMSourceAPP';
+    var SETTLE_MS = 300;
+    var CACHE_MS = 1500;
+
+    var cache = null, cacheAt = 0, pending = null;
 
     function call(fn, what) {
         return Apps.withTimeout(new Promise(function (resolve, reject) {
@@ -11,77 +26,86 @@
         }), 8000, what);
     }
 
-    function sources() {
-        return call(function (ok, err) {
+    function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+    // Une seule requête VIDEOSOURCE à la fois, et réponse en cache 1,5 s :
+    // l'événement TV, le minuteur et le retour à l'accueil peuvent tomber ensemble.
+    function sources(fresh) {
+        if (!fresh && cache && Date.now() - cacheAt < CACHE_MS) return Promise.resolve(cache);
+        if (pending) return pending;
+        pending = call(function (ok, err) {
             tizen.systeminfo.getPropertyValue('VIDEOSOURCE', ok, err);
-        }, 'Input list');
+        }, 'Liste des sources').then(function (info) {
+            cache = info; cacheAt = Date.now(); pending = null; return info;
+        }, function (e) { pending = null; throw e; });
+        return pending;
     }
 
+    function invalidate() { cache = null; }
+
     function describeSource(s) {
-        return s ? s.type + (s.type === 'TV' ? '' : ' ' + s.number) : 'unknown';
+        return s ? s.type + (s.type === 'TV' ? '' : ' ' + s.number) : 'inconnue';
     }
 
     function current() {
-        try {
-            return tizen.tvwindow.getSource('MAIN');
-        } catch (e) {
-            return null;
-        }
+        try { return tizen.tvwindow.getSource('MAIN'); } catch (e) { return null; }
     }
 
-    // Returns { 1: true, 2: false, ... } for HDMI ports the TV reports.
-    function hdmiStatus() {
-        return sources().then(function (info) {
-            var status = {};
-            (info.disconnected || []).forEach(function (s) { if (s.type === 'HDMI') status[s.number] = false; });
-            (info.connected || []).forEach(function (s) { if (s.type === 'HDMI') status[s.number] = true; });
-            return status;
-        });
+    // { 1: true, 2: false, ... } pour les ports HDMI signalés par la TV.
+    function hdmiStatus(info) {
+        var status = {};
+        (info.disconnected || []).forEach(function (s) { if (s.type === 'HDMI') status[s.number] = false; });
+        (info.connected || []).forEach(function (s) { if (s.type === 'HDMI') status[s.number] = true; });
+        return status;
     }
 
     function findHdmi(n) {
-        return sources().then(function (info) {
+        return sources(true).then(function (info) {
             var all = (info.connected || []).concat(info.disconnected || []);
-            var src = all.find(function (s) { return s.type === 'HDMI' && s.number === n; });
-            if (!src) throw new Error('HDMI ' + n + ' is not reported by the TV');
-            return src;
+            for (var i = 0; i < all.length; i++) if (all[i].type === 'HDMI' && all[i].number === n) return all[i];
+            throw new Error('HDMI ' + n + ' n\'est pas signalé par la TV');
         });
     }
 
     function setSource(src) {
-        return call(function (ok, err) { tizen.tvwindow.setSource(src, ok, err, 'MAIN'); }, 'Switch input');
-    }
-
-    function showFull() {
-        return call(function (ok, err) { tizen.tvwindow.show(ok, err, FULL, 'MAIN'); }, 'Show input');
+        return call(function (ok, err) { tizen.tvwindow.setSource(src, ok, err, 'MAIN'); }, 'Changement de source');
     }
 
     function hide() {
-        return call(function (ok, err) { tizen.tvwindow.hide(ok, err, 'MAIN'); }, 'Hide input');
+        return call(function (ok, err) { tizen.tvwindow.hide(ok, err, 'MAIN'); }, 'Masquer la source');
     }
 
-    function openViewer() {
-        return Apps.launch(VIEWER_APP);
-    }
+    function openViewer() { return Apps.launch(VIEWER_APP); }
+    function openPicker() { return Apps.launch(SOURCE_APP); }
 
-    // Resolves to 'inapp' when the input is now showing inside the launcher, otherwise 'external'.
+    // Résout 'viewer' (lecteur TV natif), 'switch' (source changée seulement) ou 'picker' (repli).
+    var busy = false;
     function open(hdmi, method) {
+        if (busy) return Promise.reject(new Error('Changement de source déjà en cours'));
+        busy = true;
+        var done = function (v) { busy = false; return v; };
+        var fallback = function (err) {
+            return openPicker().then(function () { busy = false; return 'picker'; },
+                function () { busy = false; throw err; });
+        };
         return findHdmi(hdmi).then(function (src) {
             return setSource(src).then(function () {
-                if (method === 'switch') return 'external';
-                if (method === 'inapp') return showFull().then(function () { return 'inapp'; });
-                return openViewer().then(function () { return 'external'; });
+                invalidate();
+                if (method === 'switch') return 'switch';
+                return delay(SETTLE_MS).then(openViewer).then(function () { return 'viewer'; });
             });
-        });
+        }).then(done, fallback);
     }
 
     window.Inputs = {
         sources: sources,
+        invalidate: invalidate,
         hdmiStatus: hdmiStatus,
         current: current,
         describeSource: describeSource,
         open: open,
         hide: hide,
-        openViewer: openViewer
+        openViewer: openViewer,
+        openPicker: openPicker
     };
 })();
