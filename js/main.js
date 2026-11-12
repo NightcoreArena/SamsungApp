@@ -227,7 +227,7 @@
   });
  }
 
- // ── HDMI status auto-refresh every 10s ───────────────────────────────────
+ // ── HDMI status: instant (TV event) + every 10s + on return ───────────────────────────────────
  function refreshInputs(){
   if(preview||!window.Inputs)return;
   Inputs.sources().then(function(info){
@@ -420,8 +420,10 @@
 
  if(preview)$('preview').textContent='Aperçu navigateur';
  function scale(){if(preview)$('stage').style.transform='scale('+Math.min(window.innerWidth/1920,window.innerHeight/1080)+')';}
- document.addEventListener('visibilitychange',function(){if(!document.hidden)clock();});
+ document.addEventListener('visibilitychange',function(){if(!document.hidden){clock();refreshInputs();}});
+ // La TV prévient dès qu'un appareil HDMI s'allume ou s'éteint : la tuile change aussitôt.
+ if(!preview){try{tizen.systeminfo.addPropertyValueChangeListener('VIDEOSOURCE',function(){refreshInputs();});}catch(e){}}
  window.addEventListener('resize',scale);
- setInterval(refreshInputs,30000);
+ setInterval(refreshInputs,10000);
  scale();appearance();clock();setInterval(clock,30000);section=1;toolbar();load();
 }());
