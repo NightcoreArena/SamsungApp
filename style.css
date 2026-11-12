@@ -167,3 +167,25 @@ footer { left:104px;right:104px; }
 /* Message : opaque et placé entre les apps et les sources, pour rester lisible. */
 #toast { bottom:auto;top:690px;padding:18px 24px;background:#1b1d21;font-size:24px; }
 .light #toast { background:#fffdf8; }
+
+/* ---- 0.8 : finitions de l'interface ---- */
+/* Titre des sources : nombre d'appareils allumés, en bleu. */
+.sources-count { color:#4db6ff;font-size:23px; }
+.light .sources-count { color:#1a7fc1; }
+/* Dernière source utilisée : petit liseré sous la tuile. */
+.input.recent:before { content:'';position:absolute;left:50%;bottom:-11px;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--muted);opacity:.7; }
+.input.connected.recent:before { background:#4db6ff;opacity:1; }
+.input-copy { min-width:0; }
+.input-name { display:block;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+/* Aide contextuelle un peu plus lisible. */
+#hint { color:var(--muted); }
+/* Veille anti-marquage : seule l'heure reste, atténuée. Simples fondus d'opacité (composités). */
+#toolbar,#content,#sources,footer,#date,#background { transition:opacity 1.4s ease; }
+header { transition:opacity 1.4s ease,transform 1.4s ease; }
+#stage.ambient #toolbar,#stage.ambient #content,#stage.ambient #sources,#stage.ambient footer,#stage.ambient #toast { opacity:0; }
+#stage.ambient #background { opacity:.25; }
+#stage.ambient header { opacity:.45; }
+#stage.ambient #date { opacity:.6; }
+/* OLED : noir pur derrière tout (pixels éteints), et place pour le point d'état. */
+html,body { background:#000; }
+.input { padding-right:46px; }

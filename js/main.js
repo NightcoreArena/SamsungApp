@@ -8,7 +8,7 @@
  var menu=null,hold=null,held=false,toastTimer=null,hasApps=false;
  var tilesHash='',focusedEl=null,loadingApps=false;
  var defaults=['9Ur5IzDKqV.TizenYouTube','org.tizen.netflix-app','evKhCgZelL.AmazonIgnitionLauncher2','MCmYXNxgcu.DisneyPlus','5b8c3eb16b.BeamCTVDev','Jz7aUrV2Q4.Twitch'];
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{}};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true};
  try{
   var saved=JSON.parse(localStorage.getItem(key));
   if(saved&&Array.isArray(saved.order)){
@@ -16,6 +16,7 @@
    prefs.glow=saved.glow!==false;prefs.theme=saved.theme==='light'?'light':'dark';
    if(saved.inputNames&&typeof saved.inputNames==='object')prefs.inputNames=saved.inputNames;
    if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
+   prefs.lastInput=Number(saved.lastInput)||0;prefs.ambient=saved.ambient!==false;
   }
  }catch(e){}
 
@@ -79,7 +80,9 @@
   if(!clockPaths.length)makeClock();
   clockPaths.forEach(function(path,i){if(i<4 && clockValues[i]!==value[i])clockDigit(path,value[i],i,false);});
   clockValues=value;$('clock').setAttribute('aria-label',value.slice(0,2)+':'+value.slice(2,4));
-  var date=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});if($('date').textContent!==date)$('date').textContent=date;
+  var h=d.getHours(),hello=h>=5&&h<12?'Bonjour':h<18&&h>=12?'Bon après-midi':h>=18&&h<22?'Bonsoir':'Bonne nuit';
+  var date=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+' · '+hello;if($('date').textContent!==date)$('date').textContent=date;
+  if(ambient)ambientShift();
  }
 
  function appById(id){for(var i=0;i<installed.length;i++)if(installed[i].id===id)return installed[i];return null;}
@@ -162,7 +165,6 @@
  function render(){
   toolbar();shown=visibleApps();
   $('heading').textContent=all?'Toutes les apps':(editing?'Organiser':'Apps');
-  $('hint').textContent=editing?'Sélectionner · Déplacer ou masquer · Retour pour terminer':'OK pour ouvrir · Maintenir OK pour modifier';
 
   var hash=tileHash();
   if(hash!==tilesHash){
@@ -213,6 +215,22 @@
  function lineIcon(paths,cls){var n=document.createElementNS(svgNS,'svg');n.setAttribute('viewBox','0 0 24 24');n.setAttribute('class',cls);n.setAttribute('fill','none');n.setAttribute('stroke','currentColor');n.setAttribute('stroke-width','1.6');n.setAttribute('stroke-linecap','round');n.setAttribute('stroke-linejoin','round');n.setAttribute('aria-hidden','true');n.innerHTML=paths;return n;}
  var hdmiIcon='<path d="M3 7h18v7l-4 4H7l-4-4Z"/><path d="M7 11h10M9 14h6"/>',tvIcon='<rect x="3" y="6" width="18" height="14" rx="2"/><path d="m8 2 4 4 4-4"/>';
 
+ // Icône d'appareil selon le nom donné à la source.
+ var DEVICE_ICONS=[
+  [/playstation|xbox|console|switch/i,'<path d="M7 9h10a4 4 0 0 1 4 4v1.5a2.5 2.5 0 0 1-4.6 1.4L15 14H9l-1.4 1.9A2.5 2.5 0 0 1 3 14.5V13a4 4 0 0 1 4-4Z"/><path d="M8 11.5v3M6.5 13h3"/><path d="M15.5 12.4h.01M17.5 14h.01"/>'],
+  [/(^|\s)pc(\s|$)|raspberry/i,'<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/>'],
+  [/décodeur|box/i,'<rect x="3" y="9" width="18" height="7" rx="1.5"/><path d="M6 12.5h4M16 12.5h.01M7 16v2M17 16v2"/>'],
+  [/apple tv|chromecast/i,'<rect x="5" y="7" width="14" height="10" rx="3"/><path d="M9 12h6"/>'],
+  [/blu-?ray/i,'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>'],
+  [/caméra/i,'<rect x="3" y="7" width="13" height="10" rx="2"/><path d="m16 11 5-3v8l-5-3"/>']
+ ];
+ function deviceIcon(a){
+  if(!a.hdmi)return tvIcon;
+  var name=inputLabel(a);
+  for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];
+  return hdmiIcon;
+ }
+
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra','Retirer le nom personnalisé','Annuler'];
 
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
@@ -221,17 +239,21 @@
   var row=$('input-row');row.textContent='';
   inputs.forEach(function(a,i){
    var b=el('button','input'+(a.connected?' connected':''));
-   b.appendChild(lineIcon(a.hdmi?hdmiIcon:tvIcon,'input-symbol'));
+   b.appendChild(lineIcon(deviceIcon(a),'input-symbol'));
+   if(a.hdmi&&a.hdmi===prefs.lastInput)b.classList.add('recent');
    var copy=el('span','input-copy');
    copy.appendChild(el('span','input-name',inputLabel(a)));
    if(a.connected!==undefined){
-    copy.appendChild(el('small','',a.connected?'En fonction':'Éteint'));
+    copy.appendChild(el('small','',(a.connected?'En fonction':'Éteint')+(a.hdmi===prefs.lastInput?' · récent':'')));
     var dot=el('span','input-status'+(a.connected?' connected':''));dot.setAttribute('aria-hidden','true');b.appendChild(dot);
    }
    b.appendChild(copy);
    b.setAttribute('aria-label',inputLabel(a)+(a.connected!==undefined?(a.connected?', en fonction':', éteint'):''));
    b.onclick=function(){section=2;index=i;activate();};row.appendChild(b);
   });
+  // Titre : nombre d'appareils allumés.
+  var on=inputs.filter(function(x){return x.connected;}).length,h2=$('sources').querySelector('h2');
+  h2.textContent='Sources';var count=el('span','sources-count',inputs.some(function(x){return x.hdmi;})?(on?' · '+on+(on>1?' allumées':' allumée'):' · aucune allumée'):'');h2.appendChild(count);
   // La rangée vient d'être reconstruite : on remet le focus dessus (sinon il disparaît).
   if(section===2&&!menu)focus();
  }
@@ -301,7 +323,18 @@
   index=Math.max(0,Math.min(index,ns.length-1));
   if(ns[index]){ns[index].classList.add('focused');ns[index].setAttribute('data-focused','true');focusedEl=ns[index];}
   var row=section===1?Math.floor(index/6):0;$('tiles').style.transform='translateY('+(-row*252)+'px)';
-  updateScrollDots();
+  updateScrollDots();updateHint();
+ }
+
+ // Aide en bas de l'écran, selon ce qui est sélectionné.
+ function updateHint(){
+  var t;
+  if(menu)t='▲ ▼ pour choisir · OK pour valider · Retour pour fermer';
+  else if(section===0)t='OK pour choisir';
+  else if(section===2){var a=inputs[index];t=a&&a.hdmi?'OK pour ouvrir '+inputLabel(a)+' · Maintenir OK : renommer, mode d\'ouverture':'OK pour ouvrir';}
+  else if(editing||all)t='OK : ajouter, déplacer ou retirer · Retour pour terminer';
+  else t='OK pour ouvrir · Maintenir OK pour organiser';
+  if($('hint').textContent!==t)$('hint').textContent=t;
  }
 
  function panelBackdrop(){
@@ -329,11 +362,12 @@
     if(i===3)label='Ouvrir les sources';
     if(i===4){label='Animations';detail=prefs.reduceMotion?'Réduit':'Horloge animée';}
     if(i===5){label='Lueur';detail=prefs.glow?'Activée':'Désactivée';}
-    if(i===1||i===4||i===6)b.classList.add('group-start');
+    if(i===6){label='Veille anti-marquage';detail=prefs.ambient?'Après 3 min':'Désactivée';}
+    if(i===1||i===4||i===7)b.classList.add('group-start');
    }
    if(title==='Paramètres'){
-    var icons=['<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>','<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/>',tvIcon,hdmiIcon,'<path d="m12 3 2 4-2 4-2-4Zm-6 8 2 4-2 4-2-4Zm12 0 2 4-2 4-2-4Z"/>','<path d="M9 17c0-3-3-4-3-7a6 6 0 0 1 12 0c0 3-3 4-3 7ZM9 20h6"/>','<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>','<path d="m5 5 14 14M5 19 19 5"/>'];
-    b.appendChild(lineIcon(icons[i]||icons[7],'option-icon'));
+    var icons=['<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>','<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/>',tvIcon,hdmiIcon,'<path d="m12 3 2 4-2 4-2-4Zm-6 8 2 4-2 4-2-4Zm12 0 2 4-2 4-2-4Z"/>','<path d="M9 17c0-3-3-4-3-7a6 6 0 0 1 12 0c0 3-3 4-3 7ZM9 20h6"/>','<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>','<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>','<path d="m5 5 14 14M5 19 19 5"/>'];
+    b.appendChild(lineIcon(icons[i]||icons[8],'option-icon'));
    }
    b.appendChild(el('span','option-name',label));
    if(detail)b.appendChild(el('span','option-detail',detail));
@@ -367,6 +401,7 @@
   ['Ouvrir les sources',function(){launch('org.tizen.SMSourceAPP');}],
   [prefs.reduceMotion?'Animations : réduit → normal':'Animations : normal → réduit',function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();}],
   [prefs.glow?'Désactiver la lueur':'Activer la lueur',function(){prefs.glow=!prefs.glow;save();appearance();}],
+  ['Veille anti-marquage',function(){prefs.ambient=!prefs.ambient;save();poke();toast(prefs.ambient?'Veille anti-marquage : après 3 min sans touche':'Veille anti-marquage désactivée');}],
   ['Recharger les apps',function(){load();}],
   ['Fermer',function(){}]
  ]);}
@@ -387,6 +422,7 @@
     if(preview){toast('Aperçu : passage sur '+name);return;}
     toast(a.connected?'Passage sur '+name+'…':name+' semble éteint, passage quand même…');
     Inputs.open(a.hdmi,inputMethod(a)).then(function(r){
+     if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;save();renderInputs();}
      if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
     },failure);
    }
@@ -414,8 +450,26 @@
   focus();
  }
 
+ // ── Veille anti-marquage (QD-OLED) ──────────────────────────────────────
+ // Après 3 min sans touche : tout s'efface sauf l'heure, atténuée, qui se décale
+ // de quelques pixels chaque minute. La première touche réveille sans rien déclencher.
+ var AMBIENT_MS=window.FLIX_AMBIENT_MS||180000,ambient=false,ambientTimer=null,swallowUp=false;
+ var SHIFTS=[[0,0],[14,-8],[-12,10],[18,6],[-16,-10],[8,14],[-6,-14]],shiftI=0;
+ function poke(){
+  clearTimeout(ambientTimer);
+  if(prefs.ambient&&(!preview||window.FLIX_AMBIENT_MS))ambientTimer=setTimeout(function(){if(!menu&&!document.hidden)setAmbient(true);else poke();},AMBIENT_MS);
+ }
+ function setAmbient(on){
+  ambient=on;$('stage').classList.toggle('ambient',on);
+  if(!on){$('stage').querySelector('header').style.transform='';poke();}else ambientShift();
+ }
+ function ambientShift(){shiftI=(shiftI+1)%SHIFTS.length;$('stage').querySelector('header').style.transform='translate('+SHIFTS[shiftI][0]+'px,'+SHIFTS[shiftI][1]+'px)';}
+
  document.addEventListener('keydown',function(e){
-  var c=e.keyCode;if([13,37,38,39,40,10009,27,8].indexOf(c)<0)return;e.preventDefault();
+  var c=e.keyCode;
+  if(ambient){e.preventDefault();swallowUp=true;setAmbient(false);return;}
+  poke();
+  if([13,37,38,39,40,10009,27,8].indexOf(c)<0)return;e.preventDefault();
   if(c===13){
    if(hold||held)return;
    hold=setTimeout(function(){
@@ -425,7 +479,7 @@
   }
   if(c===10009||c===27||c===8)back();else arrow(c);
  });
- document.addEventListener('keyup',function(e){if(e.keyCode!==13)return;clearTimeout(hold);hold=null;if(!held)activate();held=false;});
+ document.addEventListener('keyup',function(e){if(swallowUp){swallowUp=false;return;}if(e.keyCode!==13)return;clearTimeout(hold);hold=null;if(!held)activate();held=false;});
  window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;});
 
  var appsLoadedAt=0,installedIds='';
@@ -466,7 +520,8 @@
  function scale(){if(preview)$('stage').style.transform='scale('+Math.min(window.innerWidth/1920,window.innerHeight/1080)+')';}
  // Retour sur l'accueil : heure, sources, et apps (nouvelles installations) au plus une fois par minute.
  document.addEventListener('visibilitychange',function(){
-  if(document.hidden){clearTimeout(hold);hold=null;held=false;return;}
+  if(document.hidden){clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);return;}
+  if(ambient)setAmbient(false);else poke();
   clock();refreshInputs(true);
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
  });
@@ -476,5 +531,5 @@
  setInterval(function(){refreshInputs(false);},10000);
  // Horloge calée sur le changement de minute (et non plus jusqu'à 30 s de retard).
  function scheduleClock(){var d=new Date();setTimeout(function(){clock();scheduleClock();},60500-d.getSeconds()*1000-d.getMilliseconds());}
- scale();appearance();clock();scheduleClock();section=1;toolbar();load();
+ scale();appearance();clock();scheduleClock();section=1;toolbar();load();poke();
 }());
