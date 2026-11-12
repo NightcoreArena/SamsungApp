@@ -1,0 +1,155 @@
+/* Flix Home 0.6.1 — translucent layers, composited focus fades. */
+* { box-sizing:border-box; }
+html,body { margin:0;width:100%;height:100%;overflow:hidden;background:#15191e;font-family:'SamsungOne','Helvetica Neue',Arial,sans-serif;cursor:none; }
+button { font:inherit;color:inherit;border:0;cursor:inherit;outline:0; }
+#stage { --text:#f0f1ef;--muted:#b5bbc2;--subtle:#969fa9;--surface:rgba(32,39,47,.40);--elevated:rgba(20,25,31,.94);--rim:rgba(219,228,239,.22);--focus:#e8edf0;--focus-fill:#2d3237;--overlay:rgba(0,0,0,.48);--inner:rgba(255,255,255,.13);--shadow:rgba(0,0,0,.22);position:relative;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;color:var(--text); }
+#stage.light { --text:#342f29;--muted:#655e54;--subtle:#776e61;--surface:rgba(255,252,244,.32);--elevated:rgba(248,242,232,.95);--rim:rgba(111,96,76,.20);--focus:#b57848;--focus-fill:#fffbf3;--overlay:rgba(65,53,35,.26);--inner:rgba(255,255,255,.85);--shadow:rgba(74,57,32,.12); }
+#background { position:absolute;left:0;top:0;width:1920px;height:1080px;background:url('assets/scene-dark.png') center/100% 100% no-repeat; }
+.light #background { background-image:url('assets/scene-light.png'); }
+header { position:absolute;top:120px;left:580px;width:760px;text-align:center; }
+#clock { width:760px;height:180px;color:var(--text);background:none; }
+#clock svg { width:760px;height:180px;display:block; }
+.matrix-digit,.matrix-colon { fill:currentColor;stroke:currentColor;stroke-opacity:.13;stroke-width:.55; }
+#date { color:var(--muted);font-size:28px;line-height:40px;margin-top:27px;letter-spacing:.3px; }
+#toolbar { position:absolute;right:108px;top:88px;display:flex;align-items:center;height:76px;padding:7px;border:1px solid var(--rim);border-radius:39px;background:linear-gradient(155deg,rgba(255,255,255,.065),rgba(255,255,255,0)),var(--surface);box-shadow:inset 0 1px 0 var(--inner),0 8px 18px var(--shadow); }
+.pill { position:relative;display:flex;align-items:center;justify-content:center;width:60px;height:60px;margin-right:5px;background:transparent;border-radius:30px;color:var(--muted); }
+.pill svg { width:27px;height:27px; }
+.nav-label { position:absolute;top:82px;left:-64px;width:188px;text-align:center;font-size:22px;white-space:nowrap;opacity:0;color:var(--text); }
+.pill.focused { color:var(--text);background:var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
+.pill.focused .nav-label { opacity:1; }
+.theme-switch { width:220px;margin:0 0 0 14px;background:rgba(0,0,0,.12);box-shadow:inset 0 2px 5px rgba(0,0,0,.18);border:1px solid var(--rim); }
+.theme-switch.focused { background:rgba(0,0,0,.12);box-shadow:0 0 0 2px var(--focus); }
+.mode-selection { position:absolute;top:5px;left:5px;width:103px;height:48px;border-radius:26px;background:linear-gradient(#f5f5f0,#cbd0d3);box-shadow:inset 0 1px 0 #fff,0 3px 6px rgba(0,0,0,.25);transform:translateX(105px); }
+.mode-label { position:relative;z-index:1;display:block;width:50%;font-size:22px;text-align:center;font-weight:500; }
+.mode-light { color:#c5cbd2; }.mode-dark { color:#252b31;font-weight:600; }
+.light .theme-switch,.light .theme-switch.focused { background:rgba(133,117,92,.13); }
+.light .mode-selection { background:linear-gradient(#fffdf6,#f3eadb);transform:translateX(0); }
+.light .mode-light { color:#332e27;font-weight:600; }.light .mode-dark { color:#62594b;font-weight:400; }
+#content { position:absolute;left:78px;top:396px;width:1764px; }
+h1,h2 { margin:0;font-weight:500; }
+h1 { margin-left:48px;margin-bottom:0;font-size:25px;line-height:34px;color:var(--muted);letter-spacing:.4px; }
+#viewport { height:284px;width:1764px;padding:32px 48px 28px;overflow:hidden; }
+#tiles { display:flex;flex-wrap:wrap;width:1692px; }
+.app { position:relative;flex-shrink:0;width:258px;height:220px;margin:0 24px 32px 0;padding:0;background:transparent;text-align:center;overflow:visible; }
+.tile-glow { position:absolute;z-index:0;left:-36px;top:-30px;width:330px;height:284px;opacity:0;pointer-events:none; }
+.surface { position:absolute;left:-12px;top:-12px;width:282px;height:248px;z-index:1;pointer-events:none; }
+.surface-active { opacity:0; }
+.logo-inner { position:absolute;z-index:2;top:10px;left:0;width:258px;height:154px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:28px;pointer-events:none; }
+.logo { display:block;width:120px;height:82px;object-fit:contain;opacity:1; }
+.logo-netflix { width:55px;height:80px; }.logo-youtube { width:115px;height:80px; }.logo-primevideo { width:149px;height:80px; }.logo-disneyplus { width:184px;height:108px; }.logo-twitch { width:76px;height:80px; }.logo-max { width:156px;height:104px; }
+.fallback { font-size:68px;font-weight:500;line-height:1;color:var(--text); }
+.label { position:absolute;z-index:2;left:-10px;right:-10px;top:174px;font-size:25px;line-height:32px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.app.focused .tile-glow { opacity:.65; }.light .app.focused .tile-glow { opacity:.38; }
+.app.focused .surface-active { opacity:1; }
+.app.focused .surface-normal { opacity:0; }
+.app.focused .label { color:var(--text);font-weight:600; }
+.app:after { content:'';position:absolute;z-index:3;left:0;top:0;width:258px;height:220px;border-radius:28px;box-shadow:0 0 0 2px var(--app-accent,var(--focus));pointer-events:none;opacity:0; }
+.app.focused:after { opacity:1; }
+#sources { position:absolute;left:126px;top:818px;width:1668px; }
+#sources h2 { font-size:27px;line-height:40px;color:var(--muted); }
+#input-row { display:flex;margin-top:24px; }
+.input { position:relative;display:flex;align-items:center;width:290px;height:86px;padding:0 24px;margin-right:20px;border:1px solid var(--rim);border-radius:29px;background:linear-gradient(145deg,rgba(255,255,255,.065),transparent),var(--surface);box-shadow:inset 0 1px 0 var(--inner),0 5px 12px var(--shadow);color:var(--text);text-align:left;font-size:24px; }
+.input:last-child { margin-right:0; }.input-symbol { width:40px;height:40px;flex-shrink:0;margin-right:20px; }
+.input-copy { display:block;line-height:30px; }.input small { display:block;font-size:19px;line-height:24px;color:var(--muted); }
+.input-status { position:absolute;right:22px;top:37px;width:12px;height:12px;background:#7e858d;border-radius:50%; }.input-status.connected { background:#35d36a; }.light .input-status.connected { background:#188640; }
+.input.focused { background:var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
+footer { position:absolute;left:126px;right:126px;bottom:48px;display:flex;justify-content:space-between;color:var(--subtle);font-size:20px; }
+.hidden { display:none!important; }
+#modal { position:absolute;z-index:10;top:0;left:0;width:1920px;height:1080px;background:var(--overlay);display:flex;align-items:center;justify-content:center; }
+#dialog { width:890px;padding:38px 28px 28px;border:1px solid var(--rim);border-radius:32px;background:linear-gradient(145deg,rgba(255,255,255,.06),transparent 48%),var(--elevated);box-shadow:inset 0 1px 0 var(--inner),0 22px 50px var(--shadow); }
+#dialog h2 { margin:0 24px 28px;font-size:38px;line-height:48px;font-weight:500;letter-spacing:-.5px;color:var(--text); }
+.option { display:flex;align-items:center;justify-content:space-between;width:100%;min-height:76px;padding:18px 24px;margin-top:4px;border:1px solid transparent;border-radius:20px;background:transparent;color:var(--text);text-align:left;font-size:27px;line-height:34px; }
+.option.group-start { margin-top:20px; }
+.option.focused { background:linear-gradient(150deg,rgba(255,255,255,.07),transparent),var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
+.option-detail { color:var(--muted);font-size:22px;padding-left:28px;white-space:nowrap; }
+#toast { position:absolute;z-index:20;left:360px;right:360px;bottom:142px;padding:24px;border:1px solid var(--rim);border-radius:24px;background:var(--elevated);color:var(--text);box-shadow:0 10px 28px var(--shadow);font-size:25px;text-align:center; }
+.empty-state { padding:24px;font-size:28px; }.no-glow .tile-glow { display:none; }
+/* 0.6.1 static focus review: no animation or queued transitions. */
+/* Brand accents remain local to the selected card. */
+.app[data-brand="youtube"]{--app-accent:#ff6a50}.app[data-brand="netflix"]{--app-accent:#e45b61}.app[data-brand="primevideo"]{--app-accent:#55b7e1}.app[data-brand="disneyplus"]{--app-accent:#72bdde}.app[data-brand="max"]{--app-accent:#b08bdc}.app[data-brand="twitch"]{--app-accent:#b28eea}
+.light .app[data-brand="primevideo"]{--app-accent:#2886aa}.light .app[data-brand="disneyplus"]{--app-accent:#476e9c}.light .app[data-brand="max"],.light .app[data-brand="twitch"]{--app-accent:#8854ae}
+.option-icon{width:30px;height:30px;margin-right:24px;flex-shrink:0;color:var(--muted)}.option-name{flex:1}.option-detail{flex-shrink:0}
+
+/* Final Minimal Glass specification: one flat canvas and a single local focus. */
+#stage { --text:#f5f2ec;--muted:#c1bdb7;--subtle:#97928b;--surface:rgba(255,255,255,.035);--elevated:rgba(20,20,22,.50);--rim:rgba(255,255,255,.20);--focus:#e7ddca;--focus-fill:rgba(255,255,255,.065);--overlay:rgba(0,0,0,.10);--inner:rgba(255,255,255,.05); }
+#stage.light { --text:#302b25;--muted:#625d56;--subtle:#777169;--surface:rgba(255,255,255,.30);--elevated:rgba(255,255,255,.45);--rim:rgba(255,255,255,.65);--focus:#9b8057;--focus-fill:rgba(255,255,255,.30);--overlay:rgba(48,43,37,.045);--inner:rgba(255,255,255,.20); }
+header { left:580px; }
+#clock { color:#f5f2ec; }.light #clock { color:#312c26; }
+.matrix-digit,.matrix-colon { stroke:none; }
+#toolbar,.input { background:var(--surface);box-shadow:inset 0 1px 0 var(--inner); }
+#toolbar { border-color:var(--rim); }
+#content { left:56px;top:384px;width:1808px; }
+h1 { font-size:28px; }
+#viewport { width:1808px; }
+#tiles { width:1728px; }
+.app { width:268px;margin-right:20px; }
+.surface { width:292px; }
+.tile-glow { width:340px; }
+.logo-inner { width:268px; }
+.label { left:0;right:0;font-weight:400; }
+.app.focused .label { font-weight:500; }
+.app:after { width:268px;box-shadow:inset 0 0 0 1.5px var(--app-accent,var(--focus)); }
+.app.focused .tile-glow,.light .app.focused .tile-glow { opacity:1; }
+.app[data-brand="youtube"]{--app-accent:#ff3b30}.app[data-brand="netflix"]{--app-accent:#e50914}.app[data-brand="primevideo"]{--app-accent:#00a8e1}.app[data-brand="disneyplus"]{--app-accent:#3d8bff}.app[data-brand="max"]{--app-accent:#8b5cf6}.app[data-brand="twitch"]{--app-accent:#9146ff}
+.light .app[data-brand="primevideo"]{--app-accent:#0086b4}.light .app[data-brand="disneyplus"]{--app-accent:#377acb}.light .app[data-brand="max"],.light .app[data-brand="twitch"]{--app-accent:#8450cb}
+#sources { left:104px;top:808px;width:1712px; }
+.input { border-radius:43px; }
+.input.focused { background:var(--focus-fill);box-shadow:inset 0 0 0 1.5px var(--focus); }
+footer { left:104px;right:104px; }
+.pill.focused,.theme-switch.focused { box-shadow:inset 0 0 0 1.5px var(--focus); }
+.mode-selection { background:#f5f2ec;box-shadow:inset 0 0 0 1px rgba(255,255,255,.50); }
+.light .mode-selection { background:#fffcf5; }
+#dialog { width:760px;padding:28px;border-radius:28px;background:var(--elevated);border-color:var(--rim);box-shadow:inset 0 1px 0 var(--inner); }
+#dialog h2 { margin:0 8px 20px;font-size:32px;line-height:42px; }
+.option,.option.group-start { min-height:64px;height:64px;margin-top:8px;padding:14px 16px;border-radius:17px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.025);font-size:24px;line-height:32px; }
+.light .option { background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35); }
+.option.focused { background:var(--focus-fill);box-shadow:inset 0 0 0 1px var(--focus);border-color:var(--focus); }
+.option-icon { width:26px;height:26px;margin-right:20px; }
+.option-detail { font-size:21px;padding-left:16px; }
+#toast { box-shadow:none;background:var(--elevated); }
+
+/* One low-resolution snapshot behind the glass panel, generated only on open. */
+#dialog { position:relative;overflow:hidden;background:none; }
+.panel-backdrop { position:absolute;inset:0;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none; }
+#dialog:after { content:'';position:absolute;left:0;top:0;right:0;bottom:0;z-index:1;pointer-events:none;background:var(--elevated);box-shadow:inset 0 1px 0 var(--inner);border-radius:inherit; }
+#dialog h2,#options { position:relative;z-index:2; }
+
+/* Only changed pixel digits fold; card focus remains immediate and static. */
+.matrix-overlay { display:none;fill:currentColor; }
+.matrix-overlay.flipping { display:block; }
+.matrix-fold-top,.matrix-fold-bottom { transform-origin:0 0; }
+.flipping .matrix-fold-top { animation:pixel-fold-top 280ms ease-in both; }
+.flipping .matrix-fold-bottom { animation:pixel-fold-bottom 280ms ease-out both; }
+.flipping .matrix-old-bottom { animation:pixel-old-bottom 280ms steps(1,end) both; }
+@keyframes pixel-fold-top { 0%{transform:scaleY(1);opacity:1} 49%,100%{transform:scaleY(0);opacity:.5} }
+@keyframes pixel-fold-bottom { 0%,50%{transform:scaleY(0);opacity:.65} 100%{transform:scaleY(1);opacity:1} }
+@keyframes pixel-old-bottom { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+.reduce-motion .matrix-overlay { display:none!important; }
+@media(prefers-reduced-motion:reduce){.matrix-overlay{display:none!important}}
+
+/* Real app icons for unbranded tiles */
+.app-icon { display:block;width:108px;height:108px;object-fit:contain;border-radius:18px; }
+
+/* HDMI source: blue icon + status dot when active */
+.input.connected .input-symbol { color:#4db6ff; }
+.light .input.connected .input-symbol { color:#1a7fc1; }
+.input small { display:block;font-size:19px;line-height:24px;color:var(--muted); }
+.input.connected small { color:#4db6ff; }
+.light .input.connected small { color:#1a7fc1; }
+@media(prefers-reduced-motion:reduce){.matrix-overlay{display:none!important}}
+
+/* CSS-based glow div for dynamic dominant color */
+.tile-glow-css { position:absolute;z-index:0;left:-36px;top:-30px;width:340px;height:284px;opacity:0;pointer-events:none;border-radius:50%; }
+.app.focused .tile-glow-css { opacity:1; }
+.light .app.focused .tile-glow-css { opacity:.55; }
+.no-glow .tile-glow-css { display:none; }
+
+/* Loading skeleton */
+.tile-skeleton .logo-inner { background:rgba(255,255,255,.07);border-radius:28px;animation:skeleton-pulse 1.6s ease-in-out infinite; }
+.tile-skeleton .label { background:rgba(255,255,255,.07);border-radius:6px;color:transparent;width:80px;margin:0 auto;animation:skeleton-pulse 1.6s ease-in-out infinite; }
+@keyframes skeleton-pulse { 0%,100%{opacity:.3} 50%{opacity:.6} }
+
+/* Scroll indicator dots */
+#scroll-dots { display:flex;justify-content:center;align-items:center;gap:10px;padding-top:14px;height:26px; }
+.scroll-dot { width:8px;height:8px;border-radius:50%;background:var(--subtle);opacity:.4;transition:all .2s; }
+.scroll-dot.active { width:22px;border-radius:4px;background:var(--focus);opacity:1; }
