@@ -27,7 +27,7 @@
  var tilesHash='',focusedEl=null,appsLoadedAt=0,installedIds='';
 
  // ── préférences ─────────────────────────────────────────────────────────
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true,opened:{}};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto'};
  try{
   var saved=JSON.parse(localStorage.getItem(KEY));
   if(saved&&Array.isArray(saved.order)){
@@ -38,6 +38,8 @@
    if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
    prefs.lastInput=Number(saved.lastInput)||0;prefs.lastApp=typeof saved.lastApp==='string'?saved.lastApp:'';prefs.ambient=saved.ambient!==false;
    if(saved.opened&&typeof saved.opened==='object')prefs.opened=saved.opened;
+   if(typeof saved.wallpaper==='string')prefs.wallpaper=saved.wallpaper;
+   prefs.weather=saved.weather!==false;if(typeof saved.city==='string')prefs.city=saved.city;
   }
  }catch(e){}
  function save(){try{localStorage.setItem(KEY,JSON.stringify(prefs));}catch(e){toast('Impossible de sauvegarder les réglages.');}}
@@ -70,7 +72,9 @@
   pin:'<path d="M12 17v4M8 3h8l-1 6 3 3H6l3-3Z"/>',
   move:'<path d="M12 3v18M3 12h18M12 3 9 6m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3M21 12l-3-3m3 3-3 3"/>',
   rename:'<path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/>',
-  sources:'<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'
+  sources:'<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  planet:'<circle cx="12" cy="12" r="5.5"/><path d="M4.2 15.6C1.9 17.5 1.4 19.3 2.6 20c1.8 1.1 7.4-1.6 12.4-6s7.9-9.1 6.6-10.2c-.8-.7-2.6-.2-4.6 1.2"/>',
+  wallpaper:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="16" cy="8.5" r="1.5"/>'
  };
 
  // ── apparence & teinte d'ambiance ────────────────────────────────────────
@@ -79,10 +83,18 @@
   s.classList.toggle('reduce-motion',prefs.reduceMotion);
   s.classList.toggle('no-glow',!prefs.glow);
   s.classList.toggle('light',prefs.theme==='light');
+  s.setAttribute('data-wall',prefs.wallpaper);
  }
- var tintCur=0,tintColor='';
+ // La teinte suit la sélection seulement quand on s'y arrête (0,22 s) : pendant une
+ // navigation rapide, aucun fondu plein écran (c'était le principal coût d'affichage).
+ var tintCur=0,tintColor='',tintWanted='',tintTimer=null;
  function setTint(color){
-  if(color===tintColor)return;tintColor=color;
+  tintWanted=color;clearTimeout(tintTimer);
+  if(color===tintColor)return;
+  tintTimer=setTimeout(applyTint,220);
+ }
+ function applyTint(){
+  var color=tintWanted;if(color===tintColor)return;tintColor=color;
   var next=tintCur?0:1,a=$(next?'tint-b':'tint-a'),b=$(next?'tint-a':'tint-b');
   a.style.background='radial-gradient(ellipse at 22% 30%,'+color+' 0%,transparent 68%)';
   a.style.opacity='1';b.style.opacity='0';tintCur=next;
@@ -108,6 +120,43 @@
   if(ambient)ambientShift();
  }
  function scheduleClock(){var d=new Date();setTimeout(function(){clock();scheduleClock();},60500-d.getSeconds()*1000-d.getMilliseconds());}
+
+ // ── météo ───────────────────────────────────────────────────────────────
+ var weatherAt=0;
+ function weather(force){
+  var box=$('weather');
+  if(!prefs.weather||!window.Weather){box.classList.add('hidden');return;}
+  if(document.hidden||(!force&&Date.now()-weatherAt<10*60000))return;
+  weatherAt=Date.now();
+  Weather.get(prefs.city,force).then(function(w){
+   box.textContent='';
+   box.appendChild(icon(Weather.icons[w.icon]||Weather.icons.cloud,'weather-icon'));
+   var t=el('div','weather-text');
+   t.appendChild(el('span','weather-temp',w.temp+'°'));
+   var range=w.min!=null&&w.max!=null?' · '+w.min+'° / '+w.max+'°':'';
+   t.appendChild(el('span','weather-desc',w.label+range));
+   box.appendChild(t);box.setAttribute('aria-label','Météo : '+w.temp+' degrés, '+w.label);
+   box.classList.remove('hidden');
+  },function(){box.classList.add('hidden');weatherAt=Date.now()-9*60000;});
+ }
+
+ // ── fonds d'écran (images fixes : aucun calcul pendant l'utilisation) ────
+ var WALLS=[['blackhole','Trou noir'],['galaxy','Galaxie'],['nebula','Nébuleuse'],['deepspace','Espace profond'],['scene','Paysage'],['black','Noir OLED']];
+ function wallName(k){for(var i=0;i<WALLS.length;i++)if(WALLS[i][0]===k)return WALLS[i][1];return WALLS[0][1];}
+ function wallpaperMenu(){
+  openMenu('Fond d\'écran','Les fonds spatiaux s\'affichent en thème sombre.',WALLS.map(function(w){
+   return{label:w[1],icon:w[0]==='black'?I.moon:w[0]==='scene'?I.sun:I.planet,selected:prefs.wallpaper===w[0],run:function(){
+    prefs.wallpaper=w[0];if(w[0]!=='scene'&&prefs.theme==='light'){prefs.theme='dark';renderTiles(true);}
+    save();appearance();toast('Fond d\'écran : '+w[1]);
+   }};
+  }),{grid:true});
+ }
+ function cityMenu(){
+  var opts=[{label:'Automatique',detail:'selon la connexion',icon:I.home,selected:prefs.city==='auto',run:function(){setCity('auto');}}];
+  Weather.cities.forEach(function(c){opts.push({label:c,icon:I.sources,selected:prefs.city===c,run:function(){setCity(c);}});});
+  openMenu('Ville de la météo','',opts,{grid:true});
+ }
+ function setCity(c){prefs.city=c;save();weather(true);}
 
  // ── apps ────────────────────────────────────────────────────────────────
  function appById(id){for(var i=0;i<installed.length;i++)if(installed[i].id===id)return installed[i];return null;}
@@ -188,7 +237,7 @@
    tile.setAttribute('aria-label',appName(a));tile.setAttribute('data-brand',bk);
    if(accent)tile.style.setProperty('--app-accent',accent);
    var fallback=function(){var imgs=card.querySelectorAll('img');for(var j=0;j<imgs.length;j++)card.removeChild(imgs[j]);card.insertBefore(el('span','fallback',appName(a).charAt(0).toUpperCase()),card.firstChild);};
-   if(bk!=='neutral'){var lg=el('img','logo logo-'+bk);lg.src='assets/logo-'+bk+'-'+prefs.theme+'.svg';lg.alt='';lg.onerror=fallback;card.appendChild(lg);}
+   if(bk!=='neutral'){var lg=el('img','logo logo-'+bk);lg.decoding='async';lg.src='assets/logo-'+bk+'-'+prefs.theme+'.svg';lg.alt='';lg.onerror=fallback;card.appendChild(lg);}
    else if(a.iconPath){var ic=el('img','app-icon');ic.src=a.iconPath;ic.alt='';ic.onload=function(){applyDynamicGlow(tile,ic);};ic.onerror=fallback;card.appendChild(ic);}
    else fallback();
    tile.appendChild(card);tile.appendChild(el('span','label',appName(a)));
@@ -331,7 +380,14 @@
   if(ns[index]){ns[index].classList.add('focused');focusedEl=ns[index];if(picked>=0&&section===1)focusedEl.classList.add('picked');}
   var row=section===1?Math.floor(index/COLS):0;
   $('tiles').style.transform='translateY('+(-row*ROW_H)+'px)';
-  scrollDots(row);updateHero();updateHint();
+  scheduleDetails(row);
+ }
+ // Textes du héros, aide et points : regroupés en une mise à jour par image
+ // (une flèche maintenue ne déclenche plus une mise en page à chaque répétition).
+ var detailsPending=false,detailsRow=0;
+ function scheduleDetails(row){
+  detailsRow=row;if(detailsPending)return;detailsPending=true;
+  (window.requestAnimationFrame||setTimeout)(function(){detailsPending=false;scrollDots(detailsRow);updateHero();updateHint();});
  }
  function scrollDots(row){
   var d=$('scroll-dots'),rows=Math.ceil(items.length/COLS),want=rows>1?rows:0;
@@ -405,11 +461,14 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.0',[
+  openMenu('Réglages','Flix Home 1.1',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Animations',detail:prefs.reduceMotion?'Réduites':'Normales',icon:I.motion,keep:true,run:function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();settings();}},
    {label:'Veille anti-marquage',detail:prefs.ambient?'Après 3 min':'Désactivée',icon:I.moon,keep:true,run:function(){prefs.ambient=!prefs.ambient;save();poke();settings();}},
+   {label:'Fond d\'écran',detail:wallName(prefs.wallpaper),icon:I.wallpaper,group:true,run:function(){wallpaperMenu();}},
+   {label:'Météo',detail:prefs.weather?'Affichée':'Masquée',icon:I.sun,keep:true,run:function(){prefs.weather=!prefs.weather;save();weather(true);settings();}},
+   {label:'Ville de la météo',detail:prefs.city==='auto'?'Automatique':prefs.city,icon:I.sources,run:function(){cityMenu();}},
    {label:'Sources Samsung',icon:I.sources,group:true,run:function(){launch('org.tizen.SMSourceAPP');}},
    {label:'Accueil Samsung',icon:I.home,run:function(){launch('com.samsung.tv.csfs');}},
    {label:'Recharger les apps',icon:I.refresh,run:function(){load(true);toast('Liste des apps rechargée');}}
@@ -529,6 +588,8 @@
   if(ambient){e.preventDefault();swallowUp=true;setAmbient(false);return;}
   poke();
   if([13,37,38,39,40,10009,27,8].indexOf(c)<0)return;e.preventDefault();
+  // Flèche maintenue : au plus une case toutes les 90 ms, pour que l'affichage suive.
+  if(e.repeat&&c>=37&&c<=40){var now=Date.now();if(now-lastRepeat<90)return;lastRepeat=now;}
   if(c===13){if(hold||held)return;if(focusedEl&&!menu&&section)focusedEl.classList.add('holding');hold=setTimeout(function(){hold=null;held=true;clearHolding();longPress();},HOLD_MS);return;}
   if(c===10009||c===27||c===8)back();else arrow(c);
  });
@@ -537,6 +598,7 @@
   if(e.keyCode!==13)return;
   var was=held;clearTimeout(hold);hold=null;held=false;clearHolding();if(!was)activate();
  });
+ var lastRepeat=0;
  // Retour visuel de l'appui long : une barre se remplit sur la tuile pendant 0,65 s.
  function clearHolding(){var h=document.querySelectorAll('.holding');for(var i=0;i<h.length;i++)h[i].classList.remove('holding');}
  window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;clearHolding();});
@@ -574,13 +636,14 @@
  document.addEventListener('visibilitychange',function(){
   if(document.hidden){clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);return;}
   if(ambient)setAmbient(false);else poke();
-  clock();refreshInputs(true);
+  clock();refreshInputs(true);weather();
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
  });
  // La TV prévient dès qu'un appareil HDMI s'allume ou s'éteint : la tuile change aussitôt.
  if(!preview){try{tizen.systeminfo.addPropertyValueChangeListener('VIDEOSOURCE',function(){Inputs.invalidate();refreshInputs(true);});}catch(e){}}
  window.addEventListener('resize',scale);
  setInterval(function(){refreshInputs(false);},10000);
+ setInterval(function(){weather();},15*60000);
  window.FlixHome={state:function(){return{mode:mode,section:section,index:index,picked:picked,order:prefs.order.slice(),menu:menu&&menu.options.map(function(o){return o.label;})};}};
- scale();appearance();clock();scheduleClock();toolbar();load();poke();
+ scale();appearance();clock();scheduleClock();toolbar();load();poke();weather(true);
 }());

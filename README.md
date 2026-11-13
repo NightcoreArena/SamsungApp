@@ -14,6 +14,10 @@ et une zone qui décrit ce que tu as sélectionné, sur une teinte aux couleurs 
 | Source HDMI | ouvre l'appareil via le lecteur TV (Mode Jeu, PC…) | renommer, mode d'ouverture, type d'appareil |
 
 Retour revient toujours d'un cran (annuler un déplacement, quitter un mode, fermer un menu).
+
+**Réglages** : thème, fond d'écran (trou noir, galaxie, nébuleuse, espace profond, paysage, noir OLED),
+météo et sa ville (Open-Meteo, sans compte ; position automatique par l'adresse IP via get.geojs.io,
+ou ville choisie), lueur, animations, veille anti-marquage.
 Une source dont l'appareil est allumé s'affiche en bleu, et l'ouvrir passe par le lecteur TV de
 Samsung, ce qui garde le Mode Jeu, le mode PC, le VRR, etc.
 
@@ -47,6 +51,7 @@ pendant l'installation, avec le certificat créé lors de ta première installat
   l'absence de signature.
 - Une modification de `version` dans `config.xml`, poussée sur `main`, publie automatiquement la
   release `v<version>` avec son `.wgt` (workflow `.github/workflows/release.yml`).
+- `python3 tools/make-wallpapers.py` régénère les fonds spatiaux (`assets/wall-*.jpg`).
 - `index.html` s'ouvre dans un navigateur (« Aperçu navigateur ») avec des apps et des sources simulées.
 
 D'après [arn0-tv](https://github.com/NelsonEU/arn0-tv) (licence MIT).

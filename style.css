@@ -27,10 +27,18 @@ h1,h2,p { margin:0; }
 /* ── fond ─────────────────────────────────────────────────────────────── */
 #background { position:absolute;left:0;top:0;width:1920px;height:1080px;background:url('assets/scene-dark.png') center/100% 100% no-repeat;opacity:.6; }
 .light #background { background-image:url('assets/scene-light.png');opacity:1; }
+/* Fonds spatiaux (thème sombre) : images fixes, déjà sombres, affichées pleinement. */
+#stage[data-wall="blackhole"]:not(.light) #background { background-image:url('assets/wall-blackhole.jpg');opacity:1; }
+#stage[data-wall="galaxy"]:not(.light) #background { background-image:url('assets/wall-galaxy.jpg');opacity:1; }
+#stage[data-wall="nebula"]:not(.light) #background { background-image:url('assets/wall-nebula.jpg');opacity:1; }
+#stage[data-wall="deepspace"]:not(.light) #background { background-image:url('assets/wall-deepspace.jpg');opacity:1; }
+#stage[data-wall="black"]:not(.light) #background { background:none; }
+/* Sur un fond spatial, la teinte de l'app reste discrète pour ne pas noyer l'image. */
+#stage:not([data-wall="scene"]):not(.light) #tints { opacity:.32; }
 /* Teinte de l'élément sélectionné : surface de 192×108 agrandie ×10 par la carte graphique. */
 #tints { position:absolute;left:0;top:0;opacity:.55; }
 .light #tints { opacity:.28; }
-.tint { position:absolute;left:0;top:0;width:192px;height:108px;transform:scale(10);transform-origin:0 0;opacity:0;transition:opacity .5s ease; }
+.tint { position:absolute;left:0;top:0;width:192px;height:108px;transform:scale(10);transform-origin:0 0;opacity:0;transition:opacity .4s ease; }
 #vignette { position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;
   background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 42%,rgba(0,0,0,.55) 100%); }
 .light #vignette { background:linear-gradient(180deg,rgba(255,250,240,.4) 0%,rgba(255,250,240,0) 30%,rgba(255,250,240,0) 50%,rgba(255,250,240,.6) 100%); }
@@ -44,17 +52,22 @@ h1,h2,p { margin:0; }
 .date-hello { font-size:28px;font-weight:600;line-height:34px;letter-spacing:-.2px; }
 .date-day { font-size:21px;line-height:28px;color:var(--muted); }
 .date-day:first-letter { text-transform:uppercase; }
+#weather { display:flex;align-items:center;margin-left:30px;padding-left:30px;border-left:1px solid var(--rim);height:64px; }
+.weather-icon { width:46px;height:46px;margin-right:14px;color:var(--text); }
+.weather-text { display:flex;flex-direction:column; }
+.weather-temp { font-size:30px;font-weight:600;line-height:34px; }
+.weather-desc { font-size:20px;line-height:26px;color:var(--muted);white-space:nowrap; }
 
 #toolbar { display:flex;align-items:center; }
 .tool { display:flex;align-items:center;height:60px;padding:0 24px 0 18px;margin-left:12px;border-radius:30px;background:var(--surface);
   box-shadow:inset 0 0 0 1px var(--rim);color:var(--muted);font-size:22px;font-weight:500;white-space:nowrap;
-  transition:transform .16s var(--ease),background-color .16s ease,color .16s ease; }
+  transition:transform .16s var(--ease); }
 .tool svg { width:26px;height:26px;margin-right:10px;flex-shrink:0; }
 .tool.active { color:var(--text);box-shadow:inset 0 0 0 2px var(--blue); }
 .tool.focused { background:var(--focus);color:var(--on-focus);box-shadow:0 10px 26px rgba(0,0,0,.35);transform:scale(1.06); }
 
 /* ── héros : décrit l'élément sélectionné ─────────────────────────────── */
-#hero { position:absolute;left:104px;top:206px;width:1300px; }
+#hero { position:absolute;left:104px;top:206px;width:1300px;contain:layout paint; }
 #hero-eyebrow { font-size:20px;font-weight:600;letter-spacing:2.4px;text-transform:uppercase;color:var(--muted);height:28px; }
 #hero-title { margin-top:8px;font-size:78px;line-height:92px;font-weight:700;letter-spacing:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:92px; }
 #hero-sub { margin-top:10px;font-size:26px;line-height:34px;color:var(--muted);height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
@@ -69,18 +82,17 @@ h1,h2,p { margin:0; }
 .scroll-dot { width:8px;height:8px;margin-left:8px;border-radius:4px;background:var(--subtle);opacity:.45;transition:width .2s ease,opacity .2s ease; }
 .scroll-dot.active { width:24px;opacity:1;background:var(--text); }
 #viewport { width:1808px;height:280px;padding:30px 48px 0;overflow:hidden; }
-#tiles { display:flex;flex-wrap:wrap;width:1728px;transition:transform .28s var(--ease); }
+#tiles { display:flex;flex-wrap:wrap;width:1728px;transition:transform .28s var(--ease);will-change:transform; }
 
 .app { position:relative;flex-shrink:0;width:268px;height:220px;margin:0 20px 32px 0;text-align:center;overflow:visible;
-  transition:transform .18s var(--ease),opacity .2s ease; }
+  transition:transform .18s var(--ease),opacity .2s ease;contain:layout style; }
 .app:nth-child(6n) { margin-right:0; }
 
 /* Carte : fond sobre + voile de la couleur de l'app venant du haut. */
 .card { position:absolute;z-index:2;left:0;top:6px;width:268px;height:156px;border-radius:26px;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
   background:linear-gradient(160deg,var(--accent-wash) 0%,rgba(0,0,0,0) 62%),linear-gradient(180deg,#22262d,#181b20);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.08),0 8px 20px rgba(0,0,0,.28);
-  transition:box-shadow .18s ease; }
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.08),0 8px 20px rgba(0,0,0,.28); }
 .app { --accent-wash:rgba(120,140,170,.14); }
 .app[data-brand] { --accent-wash:rgba(255,255,255,.05); }
 .app[data-brand="youtube"]{--accent-wash:rgba(255,59,48,.20)}.app[data-brand="netflix"]{--accent-wash:rgba(229,9,20,.22)}
@@ -95,14 +107,19 @@ h1,h2,p { margin:0; }
 .logo-disneyplus { width:180px;height:104px; }.logo-twitch { width:72px;height:76px; }.logo-max { width:152px;height:100px; }
 .app-icon { display:block;width:100px;height:100px;object-fit:contain;border-radius:22px; }
 .fallback { font-size:64px;font-weight:600;line-height:1;color:var(--text); }
-.label { position:absolute;z-index:2;left:0;right:0;top:176px;font-size:24px;line-height:32px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .18s ease; }
+.label { position:absolute;z-index:2;left:0;right:0;top:176px;font-size:24px;line-height:32px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 
 /* Focus : la carte grandit, anneau blanc détaché, ombre portée et lueur de marque. */
 .app.focused { transform:scale(1.08); }
-/* Lueur : une seule ombre floue teintée de la couleur de l'app (rendu peu coûteux). */
-.app.focused .card { box-shadow:0 0 0 3px var(--focus),0 0 0 7px rgba(255,255,255,.12),0 24px 60px -14px var(--app-accent,rgba(0,0,0,.6)),0 18px 36px rgba(0,0,0,.45); }
-.no-glow .app.focused .card { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(0,0,0,.45); }
-.light .app.focused .card { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(60,48,30,.22); }
+/* Anneau + ombre teintée sur un calque à part : au focus, seule son opacité change
+   (la carte graphique s'en charge, rien n'est redessiné). */
+.app:after { content:'';position:absolute;z-index:3;left:0;top:6px;width:268px;height:156px;border-radius:26px;pointer-events:none;opacity:0;
+  box-shadow:0 0 0 3px var(--focus),0 0 0 7px rgba(255,255,255,.12),0 24px 60px -14px var(--app-accent,rgba(0,0,0,.6)),0 18px 36px rgba(0,0,0,.45);
+  transition:opacity .16s ease; }
+.no-glow .app:after { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(0,0,0,.45); }
+.light .app:after { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(60,48,30,.22); }
+.app.focused:after { opacity:1; }
+.add-tile:after,.app.picked:after { display:none; }
 .app.focused .label { color:var(--text);font-weight:600; }
 
 /* Appui long : une barre se remplit en bas de la carte (après un court délai). */
