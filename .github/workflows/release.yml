@@ -1,0 +1,35 @@
+# Publie automatiquement FlixHome.wgt dans une release GitHub à chaque changement de version
+# (attribut version de config.xml). Apps2Samsung lit ces releases : ajoute la source
+# « NightcoreArena/SamsungApp » une fois, puis chaque nouvelle version apparaît dans l'app.
+name: Release Flix Home
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construire le paquet
+        run: ./tools/build-wgt.sh
+
+      - name: Publier la release (si la version est nouvelle)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(cat dist/VERSION)
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "La release v$v existe déjà : rien à publier."
+            exit 0
+          fi
+          cp dist/FlixHome.wgt "dist/FlixHome-$v.wgt"
+          gh release create "v$v" "dist/FlixHome-$v.wgt" \
+            --title "Flix Home $v" \
+            --notes "Paquet non signé pour Apps2Samsung (il le signe pour ta TV à l'installation). Remplace la version installée : même identifiant HrznHome01.Horizon, favoris et noms de sources conservés."
