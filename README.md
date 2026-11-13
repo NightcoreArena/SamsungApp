@@ -1,6 +1,19 @@
 # Flix Home
 
-Écran d'accueil léger pour TV Samsung (Tizen), avec tes apps favorites et tes sources HDMI.
+Écran d'accueil moderne et léger pour TV Samsung (Tizen) : tes apps favorites, tes sources HDMI,
+et une zone qui décrit ce que tu as sélectionné, sur une teinte aux couleurs de l'app.
+
+## Utilisation
+
+| Où | OK | OK maintenu |
+| --- | --- | --- |
+| Favoris | ouvre l'app | options : ouvrir, retirer, organiser |
+| **Organiser** (bouton en haut) | saisit l'app ; flèches pour la déplacer ; OK pour la poser ; Retour pour annuler | retirer des favoris |
+| Tuile **+ Ajouter** | choisir les apps à épingler (coche = épinglée) | — |
+| **Toutes les apps** | ouvre l'app | épingler ou désépingler |
+| Source HDMI | ouvre l'appareil via le lecteur TV (Mode Jeu, PC…) | renommer, mode d'ouverture, type d'appareil |
+
+Retour revient toujours d'un cran (annuler un déplacement, quitter un mode, fermer un menu).
 Une source dont l'appareil est allumé s'affiche en bleu, et l'ouvrir passe par le lecteur TV de
 Samsung, ce qui garde le Mode Jeu, le mode PC, le VRR, etc.
 

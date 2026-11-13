@@ -1,221 +1,248 @@
-/* Flix Home: lightweight TV launcher adapted from arn0-tv (MIT). */
+/* Flix Home 1.0 — accueil TV léger (d'après arn0-tv, MIT).
+ *
+ * Écran : barre du haut (heure, date, boutons) · zone « héros » qui décrit l'élément
+ * sélectionné · rangée d'apps · rangée de sources HDMI · aide en bas.
+ *
+ * Modes de la rangée d'apps :
+ *   home      favoris ; OK ouvre ; OK maintenu = options
+ *   organize  favoris + tuile « Ajouter » ; OK saisit une app, les flèches la déplacent,
+ *             OK la pose, Retour annule le déplacement ; OK maintenu = retirer
+ *   browse    toutes les apps ; OK ouvre ; OK maintenu = épingler / désépingler
+ *   pick      toutes les apps, coche sur les favoris ; OK épingle / désépingle
+ *
+ * Performance : aucune animation continue, aucun flou. La teinte d'ambiance est une
+ * petite surface agrandie par la carte graphique, et ne change que par fondu d'opacité.
+ */
 (function () {
  'use strict';
  var $=function(id){return document.getElementById(id);};
  var preview=!window.tizen;
- var key='flixhome.prefs.v1';
- var installed=[],shown=[],inputs=[],section=0,index=0,all=false,editing=false;
- var menu=null,hold=null,held=false,toastTimer=null,hasApps=false;
- var tilesHash='',focusedEl=null,loadingApps=false;
+ var KEY='flixhome.prefs.v1';
+ var COLS=6,ROW_H=252,HOLD_MS=650;
  var defaults=['9Ur5IzDKqV.TizenYouTube','org.tizen.netflix-app','evKhCgZelL.AmazonIgnitionLauncher2','MCmYXNxgcu.DisneyPlus','5b8c3eb16b.BeamCTVDev','Jz7aUrV2Q4.Twitch'];
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true};
+
+ var installed=[],items=[],inputs=[];
+ var mode='home',section=1,index=0,picked=-1,pickedOrigin=null;
+ var menu=null,hold=null,held=false,toastTimer=null,hasApps=false,loadingApps=false;
+ var tilesHash='',focusedEl=null,appsLoadedAt=0,installedIds='';
+
+ // ── préférences ─────────────────────────────────────────────────────────
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true,opened:{}};
  try{
-  var saved=JSON.parse(localStorage.getItem(key));
+  var saved=JSON.parse(localStorage.getItem(KEY));
   if(saved&&Array.isArray(saved.order)){
-   prefs.order=saved.order;prefs.reduceMotion=saved.reduceMotion===true;
-   prefs.glow=saved.glow!==false;prefs.theme=saved.theme==='light'?'light':'dark';
+   prefs.order=saved.order.filter(function(id){return typeof id==='string';});
+   prefs.reduceMotion=saved.reduceMotion===true;prefs.glow=saved.glow!==false;
+   prefs.theme=saved.theme==='light'?'light':'dark';
    if(saved.inputNames&&typeof saved.inputNames==='object')prefs.inputNames=saved.inputNames;
    if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
-   prefs.lastInput=Number(saved.lastInput)||0;prefs.ambient=saved.ambient!==false;
+   prefs.lastInput=Number(saved.lastInput)||0;prefs.lastApp=typeof saved.lastApp==='string'?saved.lastApp:'';prefs.ambient=saved.ambient!==false;
+   if(saved.opened&&typeof saved.opened==='object')prefs.opened=saved.opened;
   }
  }catch(e){}
+ function save(){try{localStorage.setItem(KEY,JSON.stringify(prefs));}catch(e){toast('Impossible de sauvegarder les réglages.');}}
 
- function save(){try{localStorage.setItem(key,JSON.stringify(prefs));}catch(e){toast('Impossible de sauvegarder les paramètres.');}}
- function toast(s){$('toast').textContent=s;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(function(){$('toast').classList.add('hidden');},4500);}
- function failure(e){toast('TV : '+(e.message||e.name||String(e)));}
+ // ── utilitaires ─────────────────────────────────────────────────────────
+ var svgNS='http://www.w3.org/2000/svg';
  function el(tag,cls,text){var n=document.createElement(tag);n.className=cls||'';if(text!==undefined)n.textContent=text;return n;}
- // Anti double-appui : un même lancement n'est pas renvoyé pendant 1,5 s.
- var lastLaunch={id:'',at:0};
- function launch(id){
-  if(preview){toast('Aperçu : '+id);return;}
-  var now=Date.now();if(lastLaunch.id===id&&now-lastLaunch.at<1500)return;lastLaunch={id:id,at:now};
-  Apps.launch(id).catch(failure);
- }
- function appearance(){
-  $('stage').classList.toggle('reduce-motion',prefs.reduceMotion);
-  $('stage').classList.toggle('no-glow',!prefs.glow);
-  $('stage').classList.toggle('light',prefs.theme==='light');
- }
+ function icon(paths,cls){var n=document.createElementNS(svgNS,'svg');n.setAttribute('viewBox','0 0 24 24');n.setAttribute('class',cls||'');n.setAttribute('fill','none');n.setAttribute('stroke','currentColor');n.setAttribute('stroke-width','1.7');n.setAttribute('stroke-linecap','round');n.setAttribute('stroke-linejoin','round');n.setAttribute('aria-hidden','true');n.innerHTML=paths;return n;}
+ function toast(s){$('toast').textContent=s;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(function(){$('toast').classList.add('hidden');},4000);}
+ function failure(e){toast('TV : '+(e&&(e.message||e.name)||String(e)));}
+ function setText(node,t){if(node.textContent!==t)node.textContent=t;}
 
- // ── clock (pixel matrix, only changed digits animated) ──────────────────
- var digits=[
-  ['01110','10001','10001','10001','10001','10001','01110'],
-  ['00100','01100','00100','00100','00100','00100','01110'],
-  ['01110','10001','00001','00010','00100','01000','11111'],
-  ['11110','00001','00001','01110','00001','00001','11110'],
-  ['00010','00110','01010','10010','11111','00010','00010'],
-  ['11111','10000','10000','11110','00001','00001','11110'],
-  ['01110','10000','10000','11110','10001','10001','01110'],
-  ['11111','00001','00010','00100','01000','01000','01000'],
-  ['01110','10001','10001','01110','10001','10001','01110'],
-  ['01110','10001','10001','01111','00001','00001','01110']
- ];
- var clockPaths=[],clockValues='',svgNS='http://www.w3.org/2000/svg';
- function matrixPath(value,size,gap){var path='';digits[Number(value)].forEach(function(row,y){row.split('').forEach(function(on,x){if(on==='1')path+='M'+(x*(size+gap))+' '+(y*(size+gap))+'h'+size+'v'+size+'h-'+size+'z';});});return path;}
- function svgNode(tag,attrs){var n=document.createElementNS(svgNS,tag);Object.keys(attrs||{}).forEach(function(k){n.setAttribute(k,attrs[k]);});return n;}
- function makeClock(){
-  var svg=svgNode('svg',{viewBox:'0 0 460 180','aria-hidden':'true'}),defs=svgNode('defs');svg.appendChild(defs);
-  [14,144,309,439].forEach(function(x,i){
-   var y=i<4?4:72,h=i<4?156:88,w=i<4?110:62,half=h/2,id='clock-'+i;
-   ['top','bottom'].forEach(function(part){var clip=svgNode('clipPath',{id:id+'-'+part});clip.appendChild(svgNode('rect',{x:0,y:part==='top'?0:half,width:w,height:half}));defs.appendChild(clip);});
-   var base=svgNode('path',{'class':'matrix-digit matrix-base',transform:'translate('+x+' '+y+')'});svg.appendChild(base);clockPaths.push(base);
-   var overlay=svgNode('g',{'class':'matrix-overlay',transform:'translate('+x+' '+y+')'}),oldBottom=svgNode('path',{'class':'matrix-old-bottom','clip-path':'url(#'+id+'-bottom)'});overlay.appendChild(oldBottom);
-   function leaf(part,cls){var pivot=svgNode('g',{transform:'translate(0 '+half+')'}),fold=svgNode('g',{'class':cls}),offset=svgNode('g',{transform:'translate(0 '+(-half)+')'}),path=svgNode('path',{'clip-path':'url(#'+id+'-'+part+')'});offset.appendChild(path);fold.appendChild(offset);pivot.appendChild(fold);overlay.appendChild(pivot);return path;}
-   leaf('top','matrix-fold-top');leaf('bottom','matrix-fold-bottom');svg.appendChild(overlay);base.flip={overlay:overlay,oldBottom:oldBottom,timer:null};
-  });
-  [282].forEach(function(x,i){var size=14,y=49;svg.appendChild(svgNode('path',{'class':'matrix-colon',d:'M'+x+' '+y+'h'+size+'v'+size+'h-'+size+'z M'+x+' '+(y+57)+'h'+size+'v'+size+'h-'+size+'z'}));});
-  $('clock').appendChild(svg);
+ var I={
+  grid:'<rect x="4" y="4" width="6" height="6" rx="1.6"/><rect x="14" y="4" width="6" height="6" rx="1.6"/><rect x="4" y="14" width="6" height="6" rx="1.6"/><rect x="14" y="14" width="6" height="6" rx="1.6"/>',
+  arrange:'<rect x="3.5" y="5" width="7" height="6" rx="1.5"/><rect x="13.5" y="13" width="7" height="6" rx="1.5"/><path d="M14 8h4.5m0 0-2-2m2 2-2 2M10 16H5.5m0 0 2-2m-2 2 2 2"/>',
+  gear:'<path d="M12 3.5 14 5l2.4-.4.9 2.3 2.2 1-.4 2.4L20.5 12 19 14l.4 2.4-2.2 1-.9 2.3L14 19.3 12 20.5 10 19.3l-2.4.4-.9-2.3-2.2-1L5 14l-1.5-2L5 10l-.4-2.4 2.2-1 .9-2.3L10 5Z"/><circle cx="12" cy="12" r="3"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  hdmi:'<path d="M3 7h18v7l-4 4H7l-4-4Z"/><path d="M7 11h10M9 14h6"/>',
+  tv:'<rect x="3" y="6" width="18" height="14" rx="2"/><path d="m8 2 4 4 4-4"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+  moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>',
+  glow:'<path d="M9 17c0-3-3-4-3-7a6 6 0 0 1 12 0c0 3-3 4-3 7ZM9 20h6"/>',
+  motion:'<path d="M4 12h3l2-5 4 10 2-5h5"/>',
+  home:'<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/>',
+  refresh:'<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  open:'<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>',
+  pin:'<path d="M12 17v4M8 3h8l-1 6 3 3H6l3-3Z"/>',
+  move:'<path d="M12 3v18M3 12h18M12 3 9 6m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3M21 12l-3-3m3 3-3 3"/>',
+  rename:'<path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/>',
+  sources:'<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'
+ };
+
+ // ── apparence & teinte d'ambiance ────────────────────────────────────────
+ function appearance(){
+  var s=$('stage');
+  s.classList.toggle('reduce-motion',prefs.reduceMotion);
+  s.classList.toggle('no-glow',!prefs.glow);
+  s.classList.toggle('light',prefs.theme==='light');
  }
- function clockDigit(path,value,i,animate){
-  var next=matrixPath(value,i<4?18:10,i<4?5:3),previous=path.getAttribute('d'),flip=path.flip;path.setAttribute('d',next);
-  if(!animate||prefs.reduceMotion||!previous)return;
-  clearTimeout(flip.timer);
-  var overlay=flip.overlay,ob=overlay.querySelector('.matrix-old-bottom'),ft=overlay.querySelector('.matrix-fold-top .matrix-fold-top path')||overlay.querySelector('[clip-path*="top"] path'),fb=overlay.querySelector('[clip-path*="bottom"] path');
-  if(ob)ob.setAttribute('d',previous);if(ft)ft.setAttribute('d',previous);if(fb)fb.setAttribute('d',next);
-  overlay.classList.add('flipping');flip.timer=setTimeout(function(){overlay.classList.remove('flipping');},320);
+ var tintCur=0,tintColor='';
+ function setTint(color){
+  if(color===tintColor)return;tintColor=color;
+  var next=tintCur?0:1,a=$(next?'tint-b':'tint-a'),b=$(next?'tint-a':'tint-b');
+  a.style.background='radial-gradient(ellipse at 22% 30%,'+color+' 0%,transparent 68%)';
+  a.style.opacity='1';b.style.opacity='0';tintCur=next;
+ }
+ var ACCENTS={youtube:'#ff3b30',netflix:'#e50914',primevideo:'#00a8e1',disneyplus:'#3d8bff',max:'#8b5cf6',twitch:'#9146ff',appletv:'#a1a1aa',spotify:'#1ed760',plex:'#e5a00d',crunchyroll:'#f47521',dazn:'#d6d600',movistar:'#0b6fd8'};
+ var NEUTRAL='#5b6b80',SOURCE_ON='#2f8cff';
+
+ // ── horloge (chiffres modernes, seuls les caractères qui changent sont réécrits) ──
+ var clockValues='';
+ function makeClock(){
+  var c=$('clock');c.textContent='';
+  c.appendChild(el('span','clock-h'));c.appendChild(el('span','clock-sep',':'));c.appendChild(el('span','clock-m'));
  }
  function clock(){
   if(document.hidden)return;
-  var d=new Date(),value=('0'+d.getHours()).slice(-2)+('0'+d.getMinutes()).slice(-2)+'  ';
-  if(!clockPaths.length)makeClock();
-  clockPaths.forEach(function(path,i){if(i<4 && clockValues[i]!==value[i])clockDigit(path,value[i],i,false);});
-  clockValues=value;$('clock').setAttribute('aria-label',value.slice(0,2)+':'+value.slice(2,4));
-  var h=d.getHours(),hello=h>=5&&h<12?'Bonjour':h<18&&h>=12?'Bon après-midi':h>=18&&h<22?'Bonsoir':'Bonne nuit';
-  var date=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+' · '+hello;if($('date').textContent!==date)$('date').textContent=date;
+  var d=new Date(),v=('0'+d.getHours()).slice(-2)+('0'+d.getMinutes()).slice(-2);
+  if(!$('clock').firstChild)makeClock();
+  if(clockValues!==v){$('clock').children[0].textContent=v.slice(0,2);$('clock').children[2].textContent=v.slice(2);}
+  clockValues=v;$('clock').setAttribute('aria-label',v.slice(0,2)+':'+v.slice(2));
+  var h=d.getHours(),hello=h>=5&&h<12?'Bonjour':h>=12&&h<18?'Bon après-midi':h>=18&&h<22?'Bonsoir':'Bonne nuit';
+  var day=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  var dn=$('date');if(dn.getAttribute('data-v')!==day+hello){dn.setAttribute('data-v',day+hello);dn.textContent='';dn.appendChild(el('span','date-hello',hello));dn.appendChild(el('span','date-day',day));}
   if(ambient)ambientShift();
  }
+ function scheduleClock(){var d=new Date();setTimeout(function(){clock();scheduleClock();},60500-d.getSeconds()*1000-d.getMilliseconds());}
 
+ // ── apps ────────────────────────────────────────────────────────────────
  function appById(id){for(var i=0;i<installed.length;i++)if(installed[i].id===id)return installed[i];return null;}
- function visibleApps(){if(all)return installed.slice();var a=[];prefs.order.forEach(function(id){var x=appById(id);if(x)a.push(x);});return a;}
+ function appName(a){return a.label||a.name;}
+ function favorites(){var out=[];prefs.order.forEach(function(id){var a=appById(id);if(a)out.push(a);});return out;}
+ function isFav(id){return prefs.order.indexOf(id)>=0;}
+ function allApps(){return installed.slice().sort(function(a,b){return appName(a).localeCompare(appName(b),'fr');});}
+ var ADD={kind:'add'};
+ function buildItems(){
+  if(mode==='browse'||mode==='pick')return allApps().map(function(a){return{kind:'app',app:a};});
+  var f=favorites().map(function(a){return{kind:'app',app:a};});
+  if(mode==='organize'||!f.length)f.push(ADD);
+  return f;
+ }
 
- var navIcons=[
-  '<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/>',
-  '<path d="M5 7h14M5 17h14"/><circle cx="9" cy="7" r="2.5"/><circle cx="15" cy="17" r="2.5"/>',
-  '<path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>'
+ // Anti double-appui : un même lancement n'est pas renvoyé pendant 1,5 s.
+ var lastLaunch={id:'',at:0};
+ function launch(id){
+  if(preview){toast('Aperçu : ouverture de '+id);return;}
+  var now=Date.now();if(lastLaunch.id===id&&now-lastLaunch.at<1500)return;lastLaunch={id:id,at:now};
+  Apps.launch(id).then(function(){markOpened(id);},failure);
+ }
+
+ // Dernière ouverture de chaque app (au plus 40 retenues) : affichée au-dessus du nom.
+ function markOpened(id){
+  prefs.opened[id]=Date.now();
+  var ids=Object.keys(prefs.opened).sort(function(x,y){return prefs.opened[y]-prefs.opened[x];});
+  ids.slice(40).forEach(function(k){delete prefs.opened[k];});
+  prefs.lastApp=id;save();
+ }
+ function ago(t){
+  if(!t)return'';var m=Math.round((Date.now()-t)/60000);
+  if(m<1)return'à l\'instant';if(m<60)return'il y a '+m+' min';
+  var h=Math.round(m/60);if(h<24)return'il y a '+h+' h';
+  var d=Math.round(h/24);return d===1?'hier':'il y a '+d+' jours';
+ }
+ function openedLabel(a){var t=prefs.opened[a.id];return t?' · ouverte '+ago(t):'';}
+
+ function setFav(a,on){
+  if(on&&!isFav(a.id))prefs.order.push(a.id);
+  if(!on)prefs.order=prefs.order.filter(function(id){return id!==a.id;});
+  save();
+ }
+
+ // Déplace un favori visible (les ids absents de la TV gardent leur place en fin de liste).
+ function moveFav(from,to){
+  var ids=favorites().map(function(a){return a.id;});
+  if(to<0||to>=ids.length||from===to)return false;
+  ids.splice(to,0,ids.splice(from,1)[0]);
+  prefs.order=ids.concat(prefs.order.filter(function(id){return ids.indexOf(id)<0;}));
+  return true;
+ }
+
+ // ── tuiles ──────────────────────────────────────────────────────────────
+ var logoKeys=['youtube','netflix','primevideo','disneyplus','max','twitch','appletv','spotify','plex','crunchyroll','dazn','movistar'];
+ function brandKey(a){var b=findBrand(a);return b&&logoKeys.indexOf(b.key)>=0?b.key:'neutral';}
+ function applyDynamicGlow(tile,img){
+  var c=document.createElement('canvas');c.width=12;c.height=12;var ctx=c.getContext('2d');
+  try{
+   ctx.drawImage(img,0,0,12,12);var d=ctx.getImageData(0,0,12,12).data,r=0,g=0,b=0,n=0;
+   for(var i=0;i<d.length;i+=4)if(d[i+3]>100){r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
+   if(!n)return;r=Math.round(r/n);g=Math.round(g/n);b=Math.round(b/n);
+   var col='rgb('+r+','+g+','+b+')';tile.style.setProperty('--app-accent',col);tile._accent=col;
+   tile.style.setProperty('--accent-wash','rgba('+r+','+g+','+b+',.22)');
+   if(tile===focusedEl)setTint(col);
+  }catch(e){}
+ }
+ function bindTile(tile,i){tile.onclick=function(){section=1;index=i;activate();};}
+ // Carte : fond sobre + voile de la couleur de l'app, logo centré ; anneau et ombre au focus.
+ function buildTile(item,i){
+  var tile=el('button','app'),card=el('span','card');
+  if(item.kind==='add'){
+   tile.classList.add('add-tile');tile.setAttribute('aria-label','Ajouter des apps');
+   card.appendChild(icon(I.plus,'add-icon'));tile.appendChild(card);
+   tile.appendChild(el('span','label','Ajouter'));
+  }else{
+   var a=item.app,bk=brandKey(a),accent=ACCENTS[bk];
+   tile.setAttribute('aria-label',appName(a));tile.setAttribute('data-brand',bk);
+   if(accent)tile.style.setProperty('--app-accent',accent);
+   var fallback=function(){var imgs=card.querySelectorAll('img');for(var j=0;j<imgs.length;j++)card.removeChild(imgs[j]);card.insertBefore(el('span','fallback',appName(a).charAt(0).toUpperCase()),card.firstChild);};
+   if(bk!=='neutral'){var lg=el('img','logo logo-'+bk);lg.src='assets/logo-'+bk+'-'+prefs.theme+'.svg';lg.alt='';lg.onerror=fallback;card.appendChild(lg);}
+   else if(a.iconPath){var ic=el('img','app-icon');ic.src=a.iconPath;ic.alt='';ic.onload=function(){applyDynamicGlow(tile,ic);};ic.onerror=fallback;card.appendChild(ic);}
+   else fallback();
+   tile.appendChild(card);tile.appendChild(el('span','label',appName(a)));
+   if(mode==='pick'||mode==='browse'){var badge=el('span','fav-badge'+(isFav(a.id)?' on':''));badge.appendChild(icon(mode==='pick'?I.check:I.pin));tile.appendChild(badge);}
+  }
+  card.appendChild(el('span','hold-bar'));
+  bindTile(tile,i);
+  return tile;
+ }
+
+ function itemsHash(){
+  return mode+'|'+prefs.theme+'|'+items.map(function(it){return it.kind==='add'?'+':it.app.id+(mode==='pick'||mode==='browse'?(isFav(it.app.id)?'*':''):'');}).join(',');
+ }
+
+ function renderTiles(force){
+  items=buildItems();
+  var h=itemsHash();
+  if(!force&&h===tilesHash)return;
+  tilesHash=h;
+  var box=$('tiles');
+  // Le focus peut être ailleurs (barre du haut) : on ne l'oublie que s'il était sur une tuile.
+  if(focusedEl&&box.contains(focusedEl))focusedEl=null;
+  box.textContent='';
+  if(!items.length&&loadingApps){
+   for(var s=0;s<COLS;s++){var sk=el('button','app tile-skeleton');sk.setAttribute('aria-hidden','true');sk.appendChild(el('span','card'));box.appendChild(sk);}
+   return;
+  }
+  var frag=document.createDocumentFragment();
+  items.forEach(function(it,i){frag.appendChild(buildTile(it,i));});
+  box.appendChild(frag);
+  if(!items.length)box.appendChild(el('p','empty-state','Aucune app trouvée.'));
+ }
+
+ // ── barre d'outils ──────────────────────────────────────────────────────
+ var TOOLS=[
+  {label:'Toutes les apps',on:'Retour aux favoris',icon:I.grid,active:function(){return mode==='browse'||mode==='pick';}},
+  {label:'Organiser',on:'Terminer',icon:I.arrange,active:function(){return mode==='organize';}},
+  {label:'Réglages',icon:I.gear,active:function(){return false;}}
  ];
-
  function toolbar(){
   var n=$('toolbar');
-  var labelAll=all?'Favoris':'Toutes les apps';
-  var labelEdit=editing?'Terminé':'Modifier';
-  if(n.children.length===4){
-   n.children[0].setAttribute('aria-label',labelAll);n.children[0].querySelector('.nav-label').textContent=labelAll;
-   n.children[1].setAttribute('aria-label',labelEdit);n.children[1].querySelector('.nav-label').textContent=labelEdit;
-   n.children[3].setAttribute('aria-checked',String(prefs.theme==='light'));return;
+  if(!n.children.length){
+   TOOLS.forEach(function(t,i){
+    var b=el('button','tool');b.appendChild(icon(t.icon));b.appendChild(el('span','tool-label',t.label));
+    b.onclick=function(){section=0;index=i;activate();};n.appendChild(b);
+   });
   }
-  n.textContent='';
-  [labelAll,labelEdit,'Paramètres','Affichage'].forEach(function(label,i){
-   var button=el('button','pill');button.setAttribute('aria-label',label);
-   if(i===3){
-    button.classList.add('theme-switch');button.setAttribute('role','switch');button.setAttribute('aria-checked',String(prefs.theme==='light'));button.setAttribute('aria-label','Mode clair');
-    button.appendChild(el('span','mode-selection'));button.appendChild(el('span','mode-label mode-light','Clair'));button.appendChild(el('span','mode-label mode-dark','Sombre'));
-   }else{
-    button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">'+navIcons[i]+'</svg>';
-    button.appendChild(el('span','nav-label',label));
-   }
-   button.onclick=function(){section=0;index=i;activate();};n.appendChild(button);
+  TOOLS.forEach(function(t,i){
+   var b=n.children[i],act=t.active();b.classList.toggle('active',act);
+   var label=act&&t.on?t.on:t.label;setText(b.querySelector('.tool-label'),label);b.setAttribute('aria-label',label);
   });
  }
 
- var logoKeys=['youtube','netflix','primevideo','disneyplus','max','twitch','appletv','spotify','plex','crunchyroll','dazn','movistar'];
-
- // ── dynamic glow: extract dominant color from app icon ──────────────────
- function applyDynamicGlow(tile, imgEl){
-  var canvas=document.createElement('canvas');canvas.width=14;canvas.height=14;
-  var ctx=canvas.getContext('2d');
-  try{
-   ctx.drawImage(imgEl,0,0,14,14);
-   var d=ctx.getImageData(0,0,14,14).data,r=0,g=0,b=0,n=0;
-   for(var i=0;i<d.length;i+=4){
-    if(d[i+3]>100){r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
-   }
-   if(!n)return;
-   r=Math.round(r/n);g=Math.round(g/n);b=Math.round(b/n);
-   tile.style.setProperty('--app-accent','rgb('+r+','+g+','+b+')');
-   var glow=tile.querySelector('.tile-glow-css');
-   if(glow)glow.style.background='radial-gradient(ellipse at 50% 58%,rgba('+r+','+g+','+b+',.72),transparent 65%)';
-  }catch(e){}
- }
-
- // ── scroll dots ──────────────────────────────────────────────────────────
- function updateScrollDots(){
-  var dotsEl=$('scroll-dots'),total=shown.length,rows=Math.ceil(total/6);
-  dotsEl.textContent='';
-  if(rows<=1)return;
-  var currentRow=section===1?Math.floor(index/6):0;
-  for(var i=0;i<rows;i++){
-   dotsEl.appendChild(el('span','scroll-dot'+(i===currentRow?' active':'')));
-  }
- }
-
- // ── loading skeleton ─────────────────────────────────────────────────────
- function renderSkeleton(){
-  var box=$('tiles');box.textContent='';focusedEl=null;
-  for(var i=0;i<6;i++){
-   var tile=el('button','app tile-skeleton');tile.setAttribute('aria-hidden','true');tile.setAttribute('tabindex','-1');
-   var glow=el('div','tile-glow tile-glow-css');tile.appendChild(glow);
-   ['normal','active'].forEach(function(state){var s=el('img','surface surface-'+state);s.src='assets/glass-'+prefs.theme+'-'+state+'.png';s.alt='';tile.appendChild(s);});
-   tile.appendChild(el('span','logo-inner'));tile.appendChild(el('span','label',''));
-   box.appendChild(tile);
-  }
- }
-
- function tileHash(){return (all?'a':'f')+prefs.theme+(shown.map(function(a){return a.id;}).join(','));}
-
- function render(){
-  toolbar();shown=visibleApps();
-  $('heading').textContent=all?'Toutes les apps':(editing?'Organiser':'Apps');
-
-  var hash=tileHash();
-  if(hash!==tilesHash){
-   tilesHash=hash;
-   var box=$('tiles');box.textContent='';focusedEl=null;
-
-   if(!shown.length&&loadingApps){
-    renderSkeleton();renderInputs();focus();updateScrollDots();return;
-   }
-
-   shown.forEach(function(app,i){
-    var tile=el('button','app'),brand=findBrand(app),brandKey=brand&&logoKeys.indexOf(brand.key)>=0?brand.key:'neutral';
-    tile.setAttribute('aria-label',app.label||app.name);tile.setAttribute('data-brand',brandKey);
-
-    if(brandKey!=='neutral'){
-     // Known brand: use precolored PNG glow
-     var glowImg=el('img','tile-glow');glowImg.src='assets/glow-'+brandKey+'.png';glowImg.alt='';tile.appendChild(glowImg);
-    }else{
-     // Unknown brand: CSS glow, color set after icon loads
-     var glowDiv=el('div','tile-glow tile-glow-css');tile.appendChild(glowDiv);
-    }
-
-    ['normal','active'].forEach(function(state){var s=el('img','surface surface-'+state);s.src='assets/glass-'+prefs.theme+'-'+state+'.png';s.alt='';tile.appendChild(s);});
-    var face=el('span','logo-inner');
-
-    if(brandKey!=='neutral'){
-     var logo=el('img','logo logo-'+brandKey);logo.src='assets/logo-'+brandKey+'-'+prefs.theme+'.svg';logo.alt='';
-     logo.onerror=function(){this.style.display='none';face.appendChild(el('span','fallback',app.name.charAt(0).toUpperCase()));};
-     face.appendChild(logo);
-    }else if(app.iconPath){
-     var icon=el('img','app-icon');icon.src=app.iconPath;icon.alt='';
-     // Extract dominant color once loaded, apply to glow
-     (function(t,ic){ic.onload=function(){applyDynamicGlow(t,ic);};})(tile,icon);
-     icon.onerror=function(){this.style.display='none';face.appendChild(el('span','fallback',app.name.charAt(0).toUpperCase()));};
-     face.appendChild(icon);
-    }else{
-     face.appendChild(el('span','fallback',app.name.charAt(0).toUpperCase()));
-    }
-    tile.appendChild(face);tile.appendChild(el('span','label',app.label||app.name));
-    tile.onclick=function(){section=1;index=i;activate();};box.appendChild(tile);
-   });
-
-   if(!shown.length)box.appendChild(el('p','empty-state',all?'Aucune app trouvée.':'Aucun favori. Ajoutez des apps via "Toutes les apps".'));
-  }
-  renderInputs();focus();updateScrollDots();
- }
-
- function lineIcon(paths,cls){var n=document.createElementNS(svgNS,'svg');n.setAttribute('viewBox','0 0 24 24');n.setAttribute('class',cls);n.setAttribute('fill','none');n.setAttribute('stroke','currentColor');n.setAttribute('stroke-width','1.6');n.setAttribute('stroke-linecap','round');n.setAttribute('stroke-linejoin','round');n.setAttribute('aria-hidden','true');n.innerHTML=paths;return n;}
- var hdmiIcon='<path d="M3 7h18v7l-4 4H7l-4-4Z"/><path d="M7 11h10M9 14h6"/>',tvIcon='<rect x="3" y="6" width="18" height="14" rx="2"/><path d="m8 2 4 4 4-4"/>';
-
- // Icône d'appareil selon le nom donné à la source.
+ // ── sources ─────────────────────────────────────────────────────────────
  var DEVICE_ICONS=[
   [/playstation|xbox|console|switch/i,'<path d="M7 9h10a4 4 0 0 1 4 4v1.5a2.5 2.5 0 0 1-4.6 1.4L15 14H9l-1.4 1.9A2.5 2.5 0 0 1 3 14.5V13a4 4 0 0 1 4-4Z"/><path d="M8 11.5v3M6.5 13h3"/><path d="M15.5 12.4h.01M17.5 14h.01"/>'],
   [/(^|\s)pc(\s|$)|raspberry/i,'<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/>'],
@@ -224,303 +251,328 @@
   [/blu-?ray/i,'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>'],
   [/caméra/i,'<rect x="3" y="7" width="13" height="10" rx="2"/><path d="m16 11 5-3v8l-5-3"/>']
  ];
- function deviceIcon(a){
-  if(!a.hdmi)return tvIcon;
-  var name=inputLabel(a);
-  for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];
-  return hdmiIcon;
- }
-
- var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra','Retirer le nom personnalisé','Annuler'];
-
+ var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
+ var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
+ var METHODS={viewer:'TV Samsung',switch:'Source seule'};
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
-
+ function inputMethod(a){return prefs.inputMethods[a.hdmi]==='switch'?'switch':'viewer';}
+ function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
+ function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
   var row=$('input-row');row.textContent='';
   inputs.forEach(function(a,i){
-   var b=el('button','input'+(a.connected?' connected':''));
-   b.appendChild(lineIcon(deviceIcon(a),'input-symbol'));
-   if(a.hdmi&&a.hdmi===prefs.lastInput)b.classList.add('recent');
-   var copy=el('span','input-copy');
-   copy.appendChild(el('span','input-name',inputLabel(a)));
-   if(a.connected!==undefined){
-    copy.appendChild(el('small','',(a.connected?'En fonction':'Éteint')+(a.hdmi===prefs.lastInput?' · récent':'')));
-    var dot=el('span','input-status'+(a.connected?' connected':''));dot.setAttribute('aria-hidden','true');b.appendChild(dot);
-   }
+   var b=el('button','input'+(a.connected?' connected':'')+(a.hdmi&&a.hdmi===prefs.lastInput?' recent':''));
+   b.appendChild(icon(deviceIcon(a),'input-symbol'));
+   var copy=el('span','input-copy');copy.appendChild(el('span','input-name',inputLabel(a)));
+   copy.appendChild(el('small','input-state',a.hdmi?(a.connected?'Allumé':'Éteint')+' · HDMI '+a.hdmi:'Chaînes TV'));
    b.appendChild(copy);
-   b.setAttribute('aria-label',inputLabel(a)+(a.connected!==undefined?(a.connected?', en fonction':', éteint'):''));
+   if(a.hdmi){var dot=el('span','input-status');dot.setAttribute('aria-hidden','true');b.appendChild(dot);b.appendChild(el('span','hold-bar'));}
+   b.setAttribute('aria-label',inputLabel(a)+(a.hdmi?(a.connected?', allumé':', éteint'):''));
    b.onclick=function(){section=2;index=i;activate();};row.appendChild(b);
   });
-  // Titre : nombre d'appareils allumés.
-  var on=inputs.filter(function(x){return x.connected;}).length,h2=$('sources').querySelector('h2');
-  h2.textContent='Sources';var count=el('span','sources-count',inputs.some(function(x){return x.hdmi;})?(on?' · '+on+(on>1?' allumées':' allumée'):' · aucune allumée'):'');h2.appendChild(count);
-  // La rangée vient d'être reconstruite : on remet le focus dessus (sinon il disparaît).
+  var on=inputs.filter(function(x){return x.connected;}).length,t=$('sources-title');
+  t.textContent='Sources';
+  if(inputs.some(function(x){return x.hdmi;}))t.appendChild(el('span','sources-count',on?on+(on>1?' allumées':' allumée'):'aucune allumée'));
   if(section===2&&!menu)focus();
  }
-
- // Construit la liste des sources à partir de la réponse VIDEOSOURCE.
  function buildInputs(info){
-  var list=[],seen={},status=Inputs.hdmiStatus(info);
-  Object.keys(status).forEach(function(n){n=Number(n);if(seen[n])return;seen[n]=true;list.push({hdmi:n,label:'HDMI '+n,connected:status[n]});});
-  list.sort(function(a,b){return a.hdmi-b.hdmi;});list.push({id:'org.tizen.tv-viewer',label:'Télévision'});
+  var list=[],status=Inputs.hdmiStatus(info);
+  Object.keys(status).map(Number).sort(function(a,b){return a-b;}).forEach(function(n){list.push({hdmi:n,label:'HDMI '+n,connected:status[n]});});
+  list.push({id:'org.tizen.tv-viewer',label:'Télévision'});
   return list;
  }
- function sameInputs(a,b){
-  if(a.length!==b.length)return false;
-  for(var i=0;i<a.length;i++)if(a[i].hdmi!==b[i].hdmi||a[i].connected!==b[i].connected)return false;
-  return true;
- }
-
- // ── HDMI status: instant (TV event) + every 10s + on return ───────────────────────────────────
+ function sameInputs(a,b){if(a.length!==b.length)return false;for(var i=0;i<a.length;i++)if(a[i].hdmi!==b[i].hdmi||a[i].connected!==b[i].connected)return false;return true;}
  // Rien n'est interrogé pendant qu'une autre app (jeu, film…) est au premier plan.
  function refreshInputs(fresh){
   if(preview||!window.Inputs||document.hidden)return;
-  Inputs.sources(fresh).then(function(info){
-   var next=buildInputs(info);
-   if(!sameInputs(inputs,next)){inputs=next;renderInputs();}
-  },function(){});
+  Inputs.sources(fresh).then(function(info){var next=buildInputs(info);if(!sameInputs(inputs,next)){inputs=next;renderInputs();updateHero();}},function(){});
+ }
+ function openInput(a){
+  var name=inputLabel(a);
+  if(preview){toast('Aperçu : passage sur '+name);return;}
+  toast(a.connected?'Passage sur '+name+'…':name+' semble éteint, passage quand même…');
+  Inputs.open(a.hdmi,inputMethod(a)).then(function(r){
+   if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;save();renderInputs();}
+   if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
+  },failure);
+ }
+ function inputMenu(a){
+  var m=inputMethod(a);
+  openMenu(inputLabel(a),'HDMI '+a.hdmi+(a.connected?' · allumé':' · éteint'),[
+   {label:'Renommer',detail:inputLabel(a),icon:I.rename,run:function(){renameInput(a);}},
+   {label:'Ouverture',detail:METHODS[m],icon:I.open,keep:true,run:function(){prefs.inputMethods[a.hdmi]=m==='viewer'?'switch':'viewer';save();inputMenu(a);menu.index=1;focus();}},
+   {label:'Type d\'appareil et Mode Jeu',detail:'Menu Samsung',icon:I.sources,run:function(){if(preview){toast('Aperçu : sources Samsung');return;}Inputs.openPicker().catch(failure);}}
+  ]);
+ }
+ function renameInput(a){
+  var cur=prefs.inputNames[a.hdmi];
+  var opts=INPUT_PRESETS.map(function(name){
+   return{label:name,icon:iconFor(name),selected:cur===name,run:function(){
+    prefs.inputNames[a.hdmi]=name;save();renderInputs();updateHero();
+    toast(GAMING.test(name)?'Astuce : dans le menu Samsung, réglez son type d\'appareil sur '+(/pc|raspberry/i.test(name)?'PC':'Console de jeu')+' et activez Mode Jeu auto.':'Renommé : '+name);
+   }};
+  });
+  opts.push({label:'HDMI '+a.hdmi,detail:'nom d\'origine',icon:I.hdmi,selected:!cur,run:function(){delete prefs.inputNames[a.hdmi];save();renderInputs();updateHero();}});
+  openMenu('Renommer HDMI '+a.hdmi,'Le nom choisit aussi l\'icône de la tuile.',opts,{grid:true});
  }
 
- var GAMING=/console|pc|playstation|xbox|switch|raspberry/i;
- var METHODS={viewer:'TV Samsung (Mode Jeu, PC…)',switch:'Changer de source seulement'};
- function inputMethod(a){return prefs.inputMethods[a.hdmi]==='switch'?'switch':'viewer';}
+ // ── focus, héros, aide ──────────────────────────────────────────────────
+ function nodes(){return section===0?$('toolbar').children:section===1?$('tiles').querySelectorAll('.app'):$('input-row').children;}
+ function focus(){
+  if(focusedEl){focusedEl.classList.remove('focused');focusedEl=null;}
+  if(menu){
+   var opts=$('options').children;menu.index=Math.max(0,Math.min(menu.index,opts.length-1));
+   if(opts[menu.index]){opts[menu.index].classList.add('focused');focusedEl=opts[menu.index];}
+   updateHint();return;
+  }
+  var ns=nodes();
+  if(!ns.length&&section===1){section=inputs.length?2:0;index=0;ns=nodes();}
+  index=Math.max(0,Math.min(index,ns.length-1));
+  if(ns[index]){ns[index].classList.add('focused');focusedEl=ns[index];if(picked>=0&&section===1)focusedEl.classList.add('picked');}
+  var row=section===1?Math.floor(index/COLS):0;
+  $('tiles').style.transform='translateY('+(-row*ROW_H)+'px)';
+  scrollDots(row);updateHero();updateHint();
+ }
+ function scrollDots(row){
+  var d=$('scroll-dots'),rows=Math.ceil(items.length/COLS),want=rows>1?rows:0;
+  if(d.childElementCount!==want){d.textContent='';for(var i=0;i<want;i++)d.appendChild(el('span','scroll-dot'));}
+  for(var j=0;j<d.children.length;j++)d.children[j].classList.toggle('active',j===row);
+ }
+ function hero(eyebrow,title,sub,tint){setText($('hero-eyebrow'),eyebrow);setText($('hero-title'),title);setText($('hero-sub'),sub);setTint(tint||NEUTRAL);}
+ function updateHero(){
+  if(menu)return;
+  var favCount=favorites().length;
+  setText($('heading'),mode==='browse'?'Toutes les apps':mode==='pick'?'Choisir les favoris':mode==='organize'?'Organiser les favoris':'Favoris');
+  setText($('heading-meta'),mode==='browse'||mode==='pick'?installed.length+' apps · '+favCount+' épinglées':favCount?favCount+(favCount>1?' épinglées':' épinglée'):'');
+  $('stage').classList.toggle('organizing',mode==='organize');
+  $('stage').classList.toggle('moving',picked>=0);
+  if(section===0){
+   var t=TOOLS[index],act=t.active();
+   var subs=['Parcourez toutes les apps installées sur la TV.','Changez l\'ordre de vos favoris, ajoutez-en ou retirez-en.','Thème, lueur, veille anti-marquage, sources Samsung…'];
+   hero('Menu',act&&t.on?t.on:t.label,act&&index===0?'Revenir à vos favoris.':act&&index===1?'Enregistrer et quitter le mode Organiser.':subs[index],NEUTRAL);return;
+  }
+  if(section===2){
+   var a=inputs[index];if(!a){hero('Sources','Aucune source','',NEUTRAL);return;}
+   if(!a.hdmi){hero('Source',inputLabel(a),a.id==='org.tizen.SMSourceAPP'?'Ouvre le menu des sources Samsung.':'Ouvre les chaînes TV.',NEUTRAL);return;}
+   hero('Source · HDMI '+a.hdmi,inputLabel(a),a.connected?'Allumé · OK ouvre l\'appareil avec les réglages de la TV (Mode Jeu, PC…)':'Éteint · allumez l\'appareil, la tuile passera en bleu.',a.connected?SOURCE_ON:NEUTRAL);return;
+  }
+  var it=items[index];
+  if(!it){hero(loadingApps?'Chargement':'Favoris',loadingApps?'Un instant…':'Aucune app','',NEUTRAL);return;}
+  if(it.kind==='add'){hero(mode==='organize'?'Organiser':'Favoris','Ajouter des apps','Choisissez les apps à épingler sur l\'accueil.',NEUTRAL);return;}
+  var app=it.app,name=appName(app),tint=ACCENTS[brandKey(app)]||(focusedEl&&focusedEl._accent)||NEUTRAL;
+  if(mode==='organize'){hero(picked>=0?'Déplacement en cours':'Organiser',name,picked>=0?'Flèches pour déplacer · OK pour poser ici · Retour pour annuler':'OK pour déplacer · Maintenir OK pour retirer · Retour pour terminer',tint);return;}
+  if(mode==='pick'){hero(isFav(app.id)?'Épinglée':'Non épinglée',name,isFav(app.id)?'OK pour la retirer des favoris':'OK pour l\'épingler sur l\'accueil',tint);return;}
+  if(mode==='browse'){hero((isFav(app.id)?'Application · épinglée':'Application')+openedLabel(app),name,'OK pour ouvrir · Maintenir OK pour '+(isFav(app.id)?'désépingler':'épingler'),tint);return;}
+  hero('Application'+openedLabel(app),name,'OK pour ouvrir · Maintenir OK pour les options',tint);
+ }
+ function updateHint(){
+  var t;
+  if(menu)t='Flèches choisir · OK valider · Retour fermer';
+  else if(mode==='organize')t=picked>=0?'Flèches déplacer · OK poser · Retour annuler':'OK déplacer · Maintenir OK retirer · Retour terminer';
+  else if(mode==='pick')t='OK épingler ou retirer · Retour terminer';
+  else if(mode==='browse')t='OK ouvrir · Maintenir OK épingler · Retour favoris';
+  else t='OK ouvrir · Maintenir OK options';
+  setText($('hint'),t);
+ }
 
- function editInput(){
-  var a=inputs[index];if(!a||!a.hdmi)return;
-  var cur=inputLabel(a),m=inputMethod(a);
-  openMenu(prefs.inputNames[a.hdmi]?cur+' · HDMI '+a.hdmi:cur,[
-   ['Renommer…',function(){renameInput(a);}],
-   ['Ouverture : '+METHODS[m],function(){
-    prefs.inputMethods[a.hdmi]=m==='viewer'?'switch':'viewer';save();
-    toast('Ouverture : '+METHODS[prefs.inputMethods[a.hdmi]]);
-   }],
-   ['Type d\'appareil et Mode Jeu (menu Samsung)',function(){if(preview){toast('Aperçu : sources Samsung');return;}Inputs.openPicker().catch(failure);}],
-   ['Annuler',function(){}]
+ // ── menus ───────────────────────────────────────────────────────────────
+ // options : [{label, detail, icon, run, group, selected, keep}] ; opts.grid = disposition en 2 colonnes.
+ function openMenu(title,sub,options,opts){
+  opts=opts||{};menu={options:options,index:0,grid:!!opts.grid};
+  if(focusedEl){focusedEl.classList.remove('focused');focusedEl=null;}
+  $('dialog').classList.toggle('grid',menu.grid);
+  setText($('dialog-title'),title);setText($('dialog-sub'),sub||'');$('dialog-sub').classList.toggle('hidden',!sub);
+  var box=$('options');box.textContent='';
+  options.forEach(function(o,i){
+   var b=el('button','option'+(o.group?' group-start':'')+(o.selected?' selected':''));
+   if(o.icon)b.appendChild(icon(o.icon,'option-icon'));
+   b.appendChild(el('span','option-name',o.label));
+   if(o.detail)b.appendChild(el('span','option-detail',o.detail));
+   if(o.selected)b.appendChild(icon(I.check,'option-check'));
+   b.onclick=function(){menu.index=i;choose();};box.appendChild(b);
+   if(o.selected)menu.index=i;
+  });
+  $('modal').classList.remove('hidden');focus();
+ }
+ function closeMenu(){menu=null;$('modal').classList.add('hidden');focus();}
+ // Une option « keep » (réglage à bascule) rouvre le même menu à la même ligne.
+ function choose(){var o=menu.options[menu.index],at=menu.index;if(!o.keep)closeMenu();o.run();if(o.keep&&menu){menu.index=at;focus();}}
+ function menuArrow(code){
+  var n=menu.options.length,i=menu.index,c=menu.grid?2:1;
+  if(code===38)i-=c;if(code===40)i+=c;
+  if(menu.grid){if(code===37&&i%2===1)i--;if(code===39&&i%2===0&&i+1<n)i++;}
+  if(i>=0&&i<n)menu.index=i;focus();
+ }
+
+ function settings(){
+  openMenu('Réglages','Flix Home 1.0',[
+   {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
+   {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
+   {label:'Animations',detail:prefs.reduceMotion?'Réduites':'Normales',icon:I.motion,keep:true,run:function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();settings();}},
+   {label:'Veille anti-marquage',detail:prefs.ambient?'Après 3 min':'Désactivée',icon:I.moon,keep:true,run:function(){prefs.ambient=!prefs.ambient;save();poke();settings();}},
+   {label:'Sources Samsung',icon:I.sources,group:true,run:function(){launch('org.tizen.SMSourceAPP');}},
+   {label:'Accueil Samsung',icon:I.home,run:function(){launch('com.samsung.tv.csfs');}},
+   {label:'Recharger les apps',icon:I.refresh,run:function(){load(true);toast('Liste des apps rechargée');}}
   ]);
  }
 
- function renameInput(a){
-  var options=INPUT_PRESETS.map(function(name){
-   if(name==='Retirer le nom personnalisé')return[name,function(){delete prefs.inputNames[a.hdmi];save();renderInputs();}];
-   if(name==='Annuler')return[name,function(){}];
-   return[name,function(){
-    prefs.inputNames[a.hdmi]=name;save();renderInputs();
-    toast(GAMING.test(name)?'Renommé : '+name+'. Astuce : dans Sources Samsung, réglez son type d\'appareil sur '+(/pc|raspberry/i.test(name)?'PC':'Console de jeu')+' et activez Mode Jeu auto.':'Renommé : '+name);
-   }];
-  });
-  openMenu('Renommer "'+inputLabel(a)+'"',options);
+ // ── modes ───────────────────────────────────────────────────────────────
+ function setMode(m,keepIndex){
+  if(mode==='organize'&&picked>=0)dropPicked(true);
+  mode=m;picked=-1;section=1;if(!keepIndex)index=0;
+  renderTiles(true);toolbar();focus();
  }
-
- function nodes(){return section===0?$('toolbar').children:section===1?$('tiles').querySelectorAll('.app'):$('input-row').children;}
-
- function focus(){
-  if(focusedEl){focusedEl.classList.remove('focused');focusedEl.removeAttribute('data-focused');focusedEl=null;}
-  if(menu){
-   var opts=$('options').children;menu.index=Math.max(0,Math.min(menu.index,opts.length-1));
-   if(opts[menu.index]){opts[menu.index].classList.add('focused');focusedEl=opts[menu.index];}return;
+ function pickUp(){picked=index;pickedOrigin=prefs.order.slice();focus();}
+ function dropPicked(keep){
+  if(picked<0)return;
+  if(keep)save();else prefs.order=pickedOrigin;
+  if(!keep)index=pickedOrigin?indexOfOriginal():index;
+  picked=-1;pickedOrigin=null;renderTiles(true);focus();
+ }
+ var pickedId=null;
+ function indexOfOriginal(){var f=favorites();for(var i=0;i<f.length;i++)if(f[i].id===pickedId)return i;return index;}
+ function movePicked(code){
+  var n=favorites().length,to=index;
+  if(code===37)to--;if(code===39)to++;if(code===38)to-=COLS;if(code===40)to+=COLS;
+  if(to<0||to>=n)return;
+  if(moveFav(index,to)){
+   // Déplacement direct des nœuds : pas de reconstruction des tuiles.
+   var box=$('tiles'),node=box.children[index],ref=box.children[to];
+   if(to>index)box.insertBefore(node,ref.nextSibling);else box.insertBefore(node,ref);
+   items=buildItems();tilesHash=itemsHash();
+   Array.prototype.forEach.call(box.children,bindTile);
+   index=to;picked=to;focus();
   }
-  var ns=nodes();if(!ns.length&&section===1){section=0;index=0;ns=nodes();}
-  index=Math.max(0,Math.min(index,ns.length-1));
-  if(ns[index]){ns[index].classList.add('focused');ns[index].setAttribute('data-focused','true');focusedEl=ns[index];}
-  var row=section===1?Math.floor(index/6):0;$('tiles').style.transform='translateY('+(-row*252)+'px)';
-  updateScrollDots();updateHint();
  }
 
- // Aide en bas de l'écran, selon ce qui est sélectionné.
- function updateHint(){
-  var t;
-  if(menu)t='▲ ▼ pour choisir · OK pour valider · Retour pour fermer';
-  else if(section===0)t='OK pour choisir';
-  else if(section===2){var a=inputs[index];t=a&&a.hdmi?'OK pour ouvrir '+inputLabel(a)+' · Maintenir OK : renommer, mode d\'ouverture':'OK pour ouvrir';}
-  else if(editing||all)t='OK : ajouter, déplacer ou retirer · Retour pour terminer';
-  else t='OK pour ouvrir · Maintenir OK pour organiser';
-  if($('hint').textContent!==t)$('hint').textContent=t;
- }
-
- function panelBackdrop(){
-  var old=$('dialog').querySelector('.panel-backdrop');if(old)old.parentNode.removeChild(old);
-  var panel=$('dialog'),box=panel.getBoundingClientRect(),stage=$('stage').getBoundingClientRect(),scale=stage.width/1920;
-  var left=(box.left-stage.left)/scale,top=(box.top-stage.top)/scale,w=box.width/scale,h=box.height/scale;
-  var canvas=el('canvas','panel-backdrop');canvas.setAttribute('aria-hidden','true');canvas.width=Math.ceil(w/16);canvas.height=Math.ceil(h/16);
-  var ctx=canvas.getContext('2d');ctx.scale(canvas.width/w,canvas.height/h);ctx.fillStyle=prefs.theme==='light'?'#f3efe6':'#000';ctx.fillRect(0,0,w,h);ctx.globalAlpha=.28;
-  function rect(node){var r=node.getBoundingClientRect();return{x:(r.left-stage.left)/scale-left,y:(r.top-stage.top)/scale-top,w:r.width/scale,h:r.height/scale};}
-  function text(node){var r=rect(node),style=window.getComputedStyle(node),size=parseFloat(style.fontSize);ctx.fillStyle=style.color;ctx.font=style.fontWeight+' '+size+'px Arial';ctx.textAlign='left';ctx.fillText(node.textContent,r.x,r.y+size,r.w);}
-  var images=$('tiles').querySelectorAll('img');for(var j=0;j<images.length;j++){var image=images[j],r=rect(image);if(image.complete&&image.naturalWidth&&window.getComputedStyle(image).opacity!=='0'){try{ctx.globalAlpha=.28*Number(window.getComputedStyle(image).opacity);ctx.drawImage(image,r.x,r.y,r.w,r.h);}catch(e){}}}ctx.globalAlpha=.28;
-  var labels=document.querySelectorAll('.label,#date,#heading,#sources h2,.input-name,.input small');for(var k=0;k<labels.length;k++)text(labels[k]);
-  if(window.Path2D){var cr=rect($('clock'));ctx.save();ctx.translate(cr.x,cr.y);ctx.fillStyle=window.getComputedStyle($('clock')).color;var paths=$('clock').querySelectorAll('.matrix-base,.matrix-colon');for(var n=0;n<paths.length;n++){ctx.save();var tr=(paths[n].getAttribute('transform')||'').match(/translate\(([-.0-9]+) ([-.0-9]+)\)/);if(tr)ctx.translate(Number(tr[1]),Number(tr[2]));try{ctx.fill(new Path2D(paths[n].getAttribute('d')));}catch(e){}ctx.restore();}ctx.restore();}
-  panel.insertBefore(canvas,panel.firstChild);
- }
-
- function openMenu(title,options){
-  menu={options:options,index:0};focusedEl=null;
-  $('dialog-title').textContent=title;$('options').textContent='';
-  options.forEach(function(o,i){
-   var b=el('button','option'),label=o[0],detail='';
-   if(title==='Paramètres'){
-    if(i===0){label='Affichage';detail=prefs.theme==='light'?'Clair → Sombre':'Sombre → Clair';}
-    if(i===2)label='Paramètres TV via Samsung Home';
-    if(i===3)label='Ouvrir les sources';
-    if(i===4){label='Animations';detail=prefs.reduceMotion?'Réduit':'Horloge animée';}
-    if(i===5){label='Lueur';detail=prefs.glow?'Activée':'Désactivée';}
-    if(i===6){label='Veille anti-marquage';detail=prefs.ambient?'Après 3 min':'Désactivée';}
-    if(i===1||i===4||i===7)b.classList.add('group-start');
-   }
-   if(title==='Paramètres'){
-    var icons=['<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>','<path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/>',tvIcon,hdmiIcon,'<path d="m12 3 2 4-2 4-2-4Zm-6 8 2 4-2 4-2-4Zm12 0 2 4-2 4-2-4Z"/>','<path d="M9 17c0-3-3-4-3-7a6 6 0 0 1 12 0c0 3-3 4-3 7ZM9 20h6"/>','<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>','<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>','<path d="m5 5 14 14M5 19 19 5"/>'];
-    b.appendChild(lineIcon(icons[i]||icons[8],'option-icon'));
-   }
-   b.appendChild(el('span','option-name',label));
-   if(detail)b.appendChild(el('span','option-detail',detail));
-   b.setAttribute('aria-label',label+(detail?', '+detail:''));b.onclick=function(){menu.index=i;choose();};$('options').appendChild(b);
-  });
-  $('modal').classList.remove('hidden');focus();panelBackdrop();
- }
-
- function closeMenu(){menu=null;focusedEl=null;$('modal').classList.add('hidden');focus();}
- function choose(){var fn=menu.options[menu.index][1];closeMenu();fn();}
- function move(id,delta){var p=prefs.order.indexOf(id),q=p+delta;if(p<0||q<0||q>=prefs.order.length){toast('Vous êtes au bord des favoris.');return;}prefs.order.splice(p,1);prefs.order.splice(q,0,id);save();index=q;tilesHash='';render();}
-
- function editApp(){
-  var a=shown[index];if(!a)return;var pinned=prefs.order.indexOf(a.id)>=0;var options=[];
-  if(pinned){
-   options.push(['Déplacer à gauche',function(){move(a.id,-1);}]);
-   options.push(['Déplacer à droite',function(){move(a.id,1);}]);
-   options.push(['Retirer des favoris',function(){prefs.order=prefs.order.filter(function(id){return id!==a.id;});save();tilesHash='';render();}]);
-  }else{
-   options.push(['Ajouter aux favoris',function(){prefs.order.push(a.id);save();tilesHash='';render();toast('Ajouté aux favoris');}]);
+ function appMenu(a){
+  if(mode==='organize'){
+   openMenu(appName(a),'Organiser les favoris',[
+    {label:'Déplacer',icon:I.move,run:function(){pickedId=a.id;pickUp();}},
+    {label:'Retirer des favoris',icon:I.trash,run:function(){setFav(a,false);renderTiles(true);focus();toast(appName(a)+' retirée des favoris (toujours installée)');}}
+   ]);return;
   }
-  options.push(['Ouvrir',function(){launch(a.id);}]);
-  options.push(['Annuler',function(){}]);
-  openMenu(a.label||a.name,options);
+  var fav=isFav(a.id),opts=[{label:'Ouvrir',icon:I.open,run:function(){launch(a.id);}}];
+  opts.push({label:fav?'Retirer des favoris':'Épingler sur l\'accueil',icon:fav?I.trash:I.pin,run:function(){setFav(a,!fav);renderTiles(true);focus();toast(fav?appName(a)+' retirée des favoris':appName(a)+' épinglée sur l\'accueil');}});
+  if(mode==='home')opts.push({label:'Organiser les favoris',icon:I.arrange,group:true,run:function(){setMode('organize',true);}});
+  openMenu(appName(a),fav?'Épinglée sur l\'accueil':'Application installée',opts);
  }
 
- function settings(){openMenu('Paramètres',[
-  [prefs.theme==='dark'?'Affichage : Sombre → Clair':'Affichage : Clair → Sombre',function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();tilesHash='';appearance();render();}],
-  ['Samsung Home',function(){launch('com.samsung.tv.csfs');}],
-  ['Paramètres TV via Samsung Home',function(){launch('com.samsung.tv.csfs');}],
-  ['Ouvrir les sources',function(){launch('org.tizen.SMSourceAPP');}],
-  [prefs.reduceMotion?'Animations : réduit → normal':'Animations : normal → réduit',function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();}],
-  [prefs.glow?'Désactiver la lueur':'Activer la lueur',function(){prefs.glow=!prefs.glow;save();appearance();}],
-  ['Veille anti-marquage',function(){prefs.ambient=!prefs.ambient;save();poke();toast(prefs.ambient?'Veille anti-marquage : après 3 min sans touche':'Veille anti-marquage désactivée');}],
-  ['Recharger les apps',function(){load();}],
-  ['Fermer',function(){}]
- ]);}
-
+ // ── actions ─────────────────────────────────────────────────────────────
  function activate(){
   if(menu){choose();return;}
   if(section===0){
-   if(index===0){all=!all;section=1;index=0;render();}
-   else if(index===1){editing=!editing;section=1;index=0;render();}
-   else if(index===2)settings();
-   else{prefs.theme=prefs.theme==='dark'?'light':'dark';save();tilesHash='';appearance();render();}
-  }else if(section===1){
-   if(editing||all)editApp();else if(shown[index])launch(shown[index].id);
-  }else if(inputs[index]){
-   var a=inputs[index];
-   if(a.hdmi){
-    var name=inputLabel(a);
-    if(preview){toast('Aperçu : passage sur '+name);return;}
-    toast(a.connected?'Passage sur '+name+'…':name+' semble éteint, passage quand même…');
-    Inputs.open(a.hdmi,inputMethod(a)).then(function(r){
-     if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;save();renderInputs();}
-     if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
-    },failure);
-   }
-   else launch(a.id);
+   if(index===0)setMode(mode==='browse'||mode==='pick'?'home':'browse');
+   else if(index===1)setMode(mode==='organize'?'home':'organize');
+   else settings();
+   return;
   }
+  if(section===2){var a=inputs[index];if(!a)return;if(a.hdmi)openInput(a);else launch(a.id);return;}
+  var it=items[index];if(!it)return;
+  if(it.kind==='add'){setMode('pick');return;}
+  var app=it.app;
+  if(mode==='organize'){if(picked>=0){dropPicked(true);toast('Rangé');}else{pickedId=app.id;pickUp();}return;}
+  if(mode==='pick'){var on=!isFav(app.id);setFav(app,on);var i=index;renderTiles(true);index=i;focus();return;}
+  launch(app.id);
  }
-
+ function longPress(){
+  if(menu)return;
+  if(section===2){var a=inputs[index];if(a&&a.hdmi)inputMenu(a);return;}
+  if(section!==1)return;
+  var it=items[index];if(!it||it.kind!=='app'||picked>=0)return;
+  appMenu(it.app);
+ }
  function back(){
   if(menu){closeMenu();return;}
-  if(editing){editing=false;render();return;}
-  if(all){all=false;section=1;index=0;render();return;}
-  openMenu('Quitter Flix Home ?',[
-   ['Aller à Samsung Home',function(){launch('com.samsung.tv.csfs');}],
-   ['Rester ici',function(){}]
+  if(mode==='organize'&&picked>=0){dropPicked(false);toast('Déplacement annulé');return;}
+  if(mode==='pick'){setMode('organize');return;}
+  if(mode!=='home'){setMode('home');return;}
+  openMenu('Quitter Flix Home ?','',[
+   {label:'Aller à l\'accueil Samsung',icon:I.home,run:function(){launch('com.samsung.tv.csfs');}},
+   {label:'Rester ici',icon:I.close,run:function(){}}
   ]);
  }
-
  function arrow(code){
-  if(menu){if(code===38)menu.index=Math.max(0,menu.index-1);if(code===40)menu.index=Math.min(menu.options.length-1,menu.index+1);focus();return;}
+  if(menu){menuArrow(code);return;}
+  if(picked>=0&&section===1){movePicked(code);return;}
   var count=nodes().length;
   if(code===37)index=Math.max(0,index-1);
-  if(code===39)index=Math.min(count-1,index+1);
-  if(code===38){if(section===2){section=1;index=Math.max(0,shown.length-6+index);}else if(section===1&&index>=6)index-=6;else{section=0;index=0;}}
-  if(code===40){if(section===0){section=1;index=0;}else if(section===1&&index+6<shown.length)index+=6;else{section=2;index=0;}}
+  else if(code===39)index=Math.min(count-1,index+1);
+  else if(code===38){
+   if(section===2){section=1;var rows=Math.ceil(items.length/COLS),cur=Math.floor(index/1);index=Math.min(items.length-1,Math.max(0,(rows-1)*COLS)+Math.min(cur,COLS-1));}
+   else if(section===1&&index>=COLS)index-=COLS;
+   else if(section===1){section=0;index=mode==='organize'?1:0;}
+  }else if(code===40){
+   if(section===0){section=1;index=0;}
+   else if(section===1&&index+COLS<items.length)index+=COLS;
+   else if(section===1&&Math.floor(index/COLS)<Math.floor((items.length-1)/COLS))index=items.length-1;
+   else if(section===1&&inputs.length){section=2;index=Math.min(index%COLS,inputs.length-1);}
+  }
   focus();
  }
 
- // ── Veille anti-marquage (QD-OLED) ──────────────────────────────────────
+ // ── veille anti-marquage (QD-OLED) ──────────────────────────────────────
  // Après 3 min sans touche : tout s'efface sauf l'heure, atténuée, qui se décale
  // de quelques pixels chaque minute. La première touche réveille sans rien déclencher.
  var AMBIENT_MS=window.FLIX_AMBIENT_MS||180000,ambient=false,ambientTimer=null,swallowUp=false;
  var SHIFTS=[[0,0],[14,-8],[-12,10],[18,6],[-16,-10],[8,14],[-6,-14]],shiftI=0;
  function poke(){
   clearTimeout(ambientTimer);
-  if(prefs.ambient&&(!preview||window.FLIX_AMBIENT_MS))ambientTimer=setTimeout(function(){if(!menu&&!document.hidden)setAmbient(true);else poke();},AMBIENT_MS);
+  if(prefs.ambient&&(!preview||window.FLIX_AMBIENT_MS))ambientTimer=setTimeout(function(){if(!menu&&!document.hidden&&picked<0)setAmbient(true);else poke();},AMBIENT_MS);
  }
- function setAmbient(on){
-  ambient=on;$('stage').classList.toggle('ambient',on);
-  if(!on){$('stage').querySelector('header').style.transform='';poke();}else ambientShift();
- }
- function ambientShift(){shiftI=(shiftI+1)%SHIFTS.length;$('stage').querySelector('header').style.transform='translate('+SHIFTS[shiftI][0]+'px,'+SHIFTS[shiftI][1]+'px)';}
+ function setAmbient(on){ambient=on;$('stage').classList.toggle('ambient',on);if(!on){$('clock-group').style.transform='';poke();}else ambientShift();}
+ function ambientShift(){shiftI=(shiftI+1)%SHIFTS.length;$('clock-group').style.transform='translate('+(470+SHIFTS[shiftI][0])+'px,'+(330+SHIFTS[shiftI][1])+'px) scale(1.5)';}
 
+ // ── clavier ─────────────────────────────────────────────────────────────
  document.addEventListener('keydown',function(e){
   var c=e.keyCode;
   if(ambient){e.preventDefault();swallowUp=true;setAmbient(false);return;}
   poke();
   if([13,37,38,39,40,10009,27,8].indexOf(c)<0)return;e.preventDefault();
-  if(c===13){
-   if(hold||held)return;
-   hold=setTimeout(function(){
-    hold=null;held=true;if(menu)return;
-    if(section===1)editApp();else if(section===2)editInput();
-   },650);return;
-  }
+  if(c===13){if(hold||held)return;if(focusedEl&&!menu&&section)focusedEl.classList.add('holding');hold=setTimeout(function(){hold=null;held=true;clearHolding();longPress();},HOLD_MS);return;}
   if(c===10009||c===27||c===8)back();else arrow(c);
  });
- document.addEventListener('keyup',function(e){if(swallowUp){swallowUp=false;return;}if(e.keyCode!==13)return;clearTimeout(hold);hold=null;if(!held)activate();held=false;});
- window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;});
+ document.addEventListener('keyup',function(e){
+  if(swallowUp){swallowUp=false;return;}
+  if(e.keyCode!==13)return;
+  var was=held;clearTimeout(hold);hold=null;held=false;clearHolding();if(!was)activate();
+ });
+ // Retour visuel de l'appui long : une barre se remplit sur la tuile pendant 0,65 s.
+ function clearHolding(){var h=document.querySelectorAll('.holding');for(var i=0;i<h.length;i++)h[i].classList.remove('holding');}
+ window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;clearHolding();});
 
- var appsLoadedAt=0,installedIds='';
- function load(){
+ // ── chargement ──────────────────────────────────────────────────────────
+ function load(force){
+  appsLoadedAt=Date.now();
   if(preview){
-   installed=[
-    {id:defaults[0],name:'YouTube',label:'YouTube',iconPath:''},
-    {id:defaults[1],name:'Netflix',label:'Netflix',iconPath:''},
-    {id:defaults[2],name:'Prime Video',label:'Prime Video',iconPath:''},
-    {id:defaults[3],name:'Disney+',label:'Disney+',iconPath:''},
-    {id:defaults[4],name:'HBO Max',label:'HBO Max',iconPath:''},
-    {id:defaults[5],name:'Twitch',label:'Twitch',iconPath:''},
-    {id:'org.tizen.browser',name:'Internet',label:'Internet',iconPath:''}
-   ];
-   if(!hasApps){section=1;index=0;hasApps=true;}
-   inputs=[{hdmi:1,label:'HDMI 1',connected:true},{hdmi:2,label:'HDMI 2',connected:false},{hdmi:3,label:'HDMI 3',connected:false},{id:'org.tizen.tv-viewer',label:'Télévision'}];
-   tilesHash='';render();return;
+   var names=[['YouTube',defaults[0]],['Netflix',defaults[1]],['Prime Video',defaults[2]],['Disney+',defaults[3]],['HBO Max',defaults[4]],['Twitch',defaults[5]],['Internet','org.tizen.browser'],['Spotify','abc0000001.Spotify'],['Plex','abc0000002.Plex'],['Apple TV','abc0000003.AppleTV'],['Crunchyroll','abc0000004.Crunchyroll'],['Galerie','abc0000005.Gallery']];
+   installed=names.map(function(n){return{id:n[1],name:n[0],label:n[0],iconPath:''};});
+   inputs=window.FLIX_PREVIEW_INPUTS||[{hdmi:1,label:'HDMI 1',connected:true},{hdmi:2,label:'HDMI 2',connected:false},{hdmi:3,label:'HDMI 3',connected:false},{id:'org.tizen.tv-viewer',label:'Télévision'}];
+   hasApps=true;renderTiles(true);renderInputs();toolbar();focus();return;
   }
-  // Show skeleton immediately while loading
-  if(!hasApps){loadingApps=true;shown=[];tilesHash='';render();}
+  if(!hasApps){loadingApps=true;renderTiles(true);focus();}
   Apps.getInstalledApps().then(function(list){
    loadingApps=false;
    installed=Apps.launchable(list).filter(function(a){return Apps.describe(a).consumer||defaults.indexOf(a.id)>=0;});
-   if(!hasApps){section=1;index=0;hasApps=true;}
-   var nativeNetflix=appById('org.tizen.netflix-app');if(nativeNetflix)installed=installed.filter(function(a){return a.id!=='RN1MCdNq8t.Netflix';});
-   // Rien de neuf (retour sur l'accueil) : on ne reconstruit pas les tuiles, pas de clignotement.
+   if(appById('org.tizen.netflix-app'))installed=installed.filter(function(a){return a.id!=='RN1MCdNq8t.Netflix';});
    var ids=installed.map(function(a){return a.id+'|'+a.iconPath;}).join(',');
-   if(ids===installedIds&&tilesHash)return;
-   installedIds=ids;tilesHash='';render();
-  },function(e){loadingApps=false;failure(e);});
-  appsLoadedAt=Date.now();
-  Inputs.sources(true).then(function(info){
-   inputs=buildInputs(info);renderInputs();
-  },function(){inputs=[{id:'org.tizen.SMSourceAPP',label:'Ouvrir les sources'},{id:'org.tizen.tv-viewer',label:'Télévision'}];renderInputs();});
+   hasApps=true;
+   // Rien de neuf (retour sur l'accueil) : pas de reconstruction, pas de clignotement.
+   if(!force&&ids===installedIds&&tilesHash)return;
+   var first=!installedIds;installedIds=ids;renderTiles(true);
+   // Au démarrage, le focus revient sur la dernière app ouverte.
+   if(first&&prefs.lastApp&&mode==='home'){for(var k=0;k<items.length;k++)if(items[k].app&&items[k].app.id===prefs.lastApp){section=1;index=k;break;}}
+   focus();
+  },function(e){loadingApps=false;renderTiles(true);focus();failure(e);});
+  Inputs.sources(true).then(function(info){inputs=buildInputs(info);renderInputs();updateHero();},
+   function(){inputs=[{id:'org.tizen.SMSourceAPP',label:'Sources Samsung'},{id:'org.tizen.tv-viewer',label:'Télévision'}];renderInputs();});
  }
 
  if(preview)$('preview').textContent='Aperçu navigateur';
  function scale(){if(preview)$('stage').style.transform='scale('+Math.min(window.innerWidth/1920,window.innerHeight/1080)+')';}
  // Retour sur l'accueil : heure, sources, et apps (nouvelles installations) au plus une fois par minute.
  document.addEventListener('visibilitychange',function(){
-  if(document.hidden){clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);return;}
+  if(document.hidden){clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);return;}
   if(ambient)setAmbient(false);else poke();
   clock();refreshInputs(true);
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
@@ -529,7 +581,6 @@
  if(!preview){try{tizen.systeminfo.addPropertyValueChangeListener('VIDEOSOURCE',function(){Inputs.invalidate();refreshInputs(true);});}catch(e){}}
  window.addEventListener('resize',scale);
  setInterval(function(){refreshInputs(false);},10000);
- // Horloge calée sur le changement de minute (et non plus jusqu'à 30 s de retard).
- function scheduleClock(){var d=new Date();setTimeout(function(){clock();scheduleClock();},60500-d.getSeconds()*1000-d.getMilliseconds());}
- scale();appearance();clock();scheduleClock();section=1;toolbar();load();poke();
+ window.FlixHome={state:function(){return{mode:mode,section:section,index:index,picked:picked,order:prefs.order.slice(),menu:menu&&menu.options.map(function(o){return o.label;})};}};
+ scale();appearance();clock();scheduleClock();toolbar();load();poke();
 }());

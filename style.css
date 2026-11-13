@@ -1,191 +1,197 @@
-/* Flix Home 0.6.1 — translucent layers, composited focus fades. */
+/* Flix Home 1.0 — interface moderne, pensée pour rester fluide sur TV.
+ * Règles de performance : pas de backdrop-filter ni de flou, pas d'animation continue,
+ * pas de grand dégradé repeint à chaque image. Les seuls mouvements sont des
+ * transform/opacity (gérés par la carte graphique). */
+
 * { box-sizing:border-box; }
-html,body { margin:0;width:100%;height:100%;overflow:hidden;background:#15191e;font-family:'SamsungOne','Helvetica Neue',Arial,sans-serif;cursor:none; }
-button { font:inherit;color:inherit;border:0;cursor:inherit;outline:0; }
-#stage { --text:#f0f1ef;--muted:#b5bbc2;--subtle:#969fa9;--surface:rgba(32,39,47,.40);--elevated:rgba(20,25,31,.94);--rim:rgba(219,228,239,.22);--focus:#e8edf0;--focus-fill:#2d3237;--overlay:rgba(0,0,0,.48);--inner:rgba(255,255,255,.13);--shadow:rgba(0,0,0,.22);position:relative;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;color:var(--text); }
-#stage.light { --text:#342f29;--muted:#655e54;--subtle:#776e61;--surface:rgba(255,252,244,.32);--elevated:rgba(248,242,232,.95);--rim:rgba(111,96,76,.20);--focus:#b57848;--focus-fill:#fffbf3;--overlay:rgba(65,53,35,.26);--inner:rgba(255,255,255,.85);--shadow:rgba(74,57,32,.12); }
-#background { position:absolute;left:0;top:0;width:1920px;height:1080px;background:url('assets/scene-dark.png') center/100% 100% no-repeat; }
-.light #background { background-image:url('assets/scene-light.png'); }
-header { position:absolute;top:120px;left:580px;width:760px;text-align:center; }
-#clock { width:760px;height:180px;color:var(--text);background:none; }
-#clock svg { width:760px;height:180px;display:block; }
-.matrix-digit,.matrix-colon { fill:currentColor;stroke:currentColor;stroke-opacity:.13;stroke-width:.55; }
-#date { color:var(--muted);font-size:28px;line-height:40px;margin-top:27px;letter-spacing:.3px; }
-#toolbar { position:absolute;right:108px;top:88px;display:flex;align-items:center;height:76px;padding:7px;border:1px solid var(--rim);border-radius:39px;background:linear-gradient(155deg,rgba(255,255,255,.065),rgba(255,255,255,0)),var(--surface);box-shadow:inset 0 1px 0 var(--inner),0 8px 18px var(--shadow); }
-.pill { position:relative;display:flex;align-items:center;justify-content:center;width:60px;height:60px;margin-right:5px;background:transparent;border-radius:30px;color:var(--muted); }
-.pill svg { width:27px;height:27px; }
-.nav-label { position:absolute;top:82px;left:-64px;width:188px;text-align:center;font-size:22px;white-space:nowrap;opacity:0;color:var(--text); }
-.pill.focused { color:var(--text);background:var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
-.pill.focused .nav-label { opacity:1; }
-.theme-switch { width:220px;margin:0 0 0 14px;background:rgba(0,0,0,.12);box-shadow:inset 0 2px 5px rgba(0,0,0,.18);border:1px solid var(--rim); }
-.theme-switch.focused { background:rgba(0,0,0,.12);box-shadow:0 0 0 2px var(--focus); }
-.mode-selection { position:absolute;top:5px;left:5px;width:103px;height:48px;border-radius:26px;background:linear-gradient(#f5f5f0,#cbd0d3);box-shadow:inset 0 1px 0 #fff,0 3px 6px rgba(0,0,0,.25);transform:translateX(105px); }
-.mode-label { position:relative;z-index:1;display:block;width:50%;font-size:22px;text-align:center;font-weight:500; }
-.mode-light { color:#c5cbd2; }.mode-dark { color:#252b31;font-weight:600; }
-.light .theme-switch,.light .theme-switch.focused { background:rgba(133,117,92,.13); }
-.light .mode-selection { background:linear-gradient(#fffdf6,#f3eadb);transform:translateX(0); }
-.light .mode-light { color:#332e27;font-weight:600; }.light .mode-dark { color:#62594b;font-weight:400; }
-#content { position:absolute;left:78px;top:396px;width:1764px; }
-h1,h2 { margin:0;font-weight:500; }
-h1 { margin-left:48px;margin-bottom:0;font-size:25px;line-height:34px;color:var(--muted);letter-spacing:.4px; }
-#viewport { height:284px;width:1764px;padding:32px 48px 28px;overflow:hidden; }
-#tiles { display:flex;flex-wrap:wrap;width:1692px; }
-.app { position:relative;flex-shrink:0;width:258px;height:220px;margin:0 24px 32px 0;padding:0;background:transparent;text-align:center;overflow:visible; }
-.tile-glow { position:absolute;z-index:0;left:-36px;top:-30px;width:330px;height:284px;opacity:0;pointer-events:none; }
-.surface { position:absolute;left:-12px;top:-12px;width:282px;height:248px;z-index:1;pointer-events:none; }
-.surface-active { opacity:0; }
-.logo-inner { position:absolute;z-index:2;top:10px;left:0;width:258px;height:154px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:28px;pointer-events:none; }
-.logo { display:block;width:120px;height:82px;object-fit:contain;opacity:1; }
-.logo-netflix { width:55px;height:80px; }.logo-youtube { width:115px;height:80px; }.logo-primevideo { width:149px;height:80px; }.logo-disneyplus { width:184px;height:108px; }.logo-twitch { width:76px;height:80px; }.logo-max { width:156px;height:104px; }
-.fallback { font-size:68px;font-weight:500;line-height:1;color:var(--text); }
-.label { position:absolute;z-index:2;left:-10px;right:-10px;top:174px;font-size:25px;line-height:32px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.app.focused .tile-glow { opacity:.65; }.light .app.focused .tile-glow { opacity:.38; }
-.app.focused .surface-active { opacity:1; }
-.app.focused .surface-normal { opacity:0; }
-.app.focused .label { color:var(--text);font-weight:600; }
-.app:after { content:'';position:absolute;z-index:3;left:0;top:0;width:258px;height:220px;border-radius:28px;box-shadow:0 0 0 2px var(--app-accent,var(--focus));pointer-events:none;opacity:0; }
-.app.focused:after { opacity:1; }
-#sources { position:absolute;left:126px;top:818px;width:1668px; }
-#sources h2 { font-size:27px;line-height:40px;color:var(--muted); }
-#input-row { display:flex;margin-top:24px; }
-.input { position:relative;display:flex;align-items:center;width:290px;height:86px;padding:0 24px;margin-right:20px;border:1px solid var(--rim);border-radius:29px;background:linear-gradient(145deg,rgba(255,255,255,.065),transparent),var(--surface);box-shadow:inset 0 1px 0 var(--inner),0 5px 12px var(--shadow);color:var(--text);text-align:left;font-size:24px; }
-.input:last-child { margin-right:0; }.input-symbol { width:40px;height:40px;flex-shrink:0;margin-right:20px; }
-.input-copy { display:block;line-height:30px; }.input small { display:block;font-size:19px;line-height:24px;color:var(--muted); }
-.input-status { position:absolute;right:22px;top:37px;width:12px;height:12px;background:#7e858d;border-radius:50%; }.input-status.connected { background:#35d36a; }.light .input-status.connected { background:#188640; }
-.input.focused { background:var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
-footer { position:absolute;left:126px;right:126px;bottom:48px;display:flex;justify-content:space-between;color:var(--subtle);font-size:20px; }
+html,body { margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:'SamsungOne','Helvetica Neue',Arial,sans-serif;cursor:none; }
+button { font:inherit;color:inherit;border:0;background:none;padding:0;cursor:inherit;outline:0;text-align:inherit; }
+h1,h2,p { margin:0; }
 .hidden { display:none!important; }
-#modal { position:absolute;z-index:10;top:0;left:0;width:1920px;height:1080px;background:var(--overlay);display:flex;align-items:center;justify-content:center; }
-#dialog { width:890px;padding:38px 28px 28px;border:1px solid var(--rim);border-radius:32px;background:linear-gradient(145deg,rgba(255,255,255,.06),transparent 48%),var(--elevated);box-shadow:inset 0 1px 0 var(--inner),0 22px 50px var(--shadow); }
-#dialog h2 { margin:0 24px 28px;font-size:38px;line-height:48px;font-weight:500;letter-spacing:-.5px;color:var(--text); }
-.option { display:flex;align-items:center;justify-content:space-between;width:100%;min-height:76px;padding:18px 24px;margin-top:4px;border:1px solid transparent;border-radius:20px;background:transparent;color:var(--text);text-align:left;font-size:27px;line-height:34px; }
-.option.group-start { margin-top:20px; }
-.option.focused { background:linear-gradient(150deg,rgba(255,255,255,.07),transparent),var(--focus-fill);box-shadow:0 0 0 2px var(--focus),inset 0 1px 0 var(--inner); }
-.option-detail { color:var(--muted);font-size:22px;padding-left:28px;white-space:nowrap; }
-#toast { position:absolute;z-index:20;left:360px;right:360px;bottom:142px;padding:24px;border:1px solid var(--rim);border-radius:24px;background:var(--elevated);color:var(--text);box-shadow:0 10px 28px var(--shadow);font-size:25px;text-align:center; }
-.empty-state { padding:24px;font-size:28px; }.no-glow .tile-glow { display:none; }
-/* 0.6.1 static focus review: no animation or queued transitions. */
-/* Brand accents remain local to the selected card. */
-.app[data-brand="youtube"]{--app-accent:#ff6a50}.app[data-brand="netflix"]{--app-accent:#e45b61}.app[data-brand="primevideo"]{--app-accent:#55b7e1}.app[data-brand="disneyplus"]{--app-accent:#72bdde}.app[data-brand="max"]{--app-accent:#b08bdc}.app[data-brand="twitch"]{--app-accent:#b28eea}
-.light .app[data-brand="primevideo"]{--app-accent:#2886aa}.light .app[data-brand="disneyplus"]{--app-accent:#476e9c}.light .app[data-brand="max"],.light .app[data-brand="twitch"]{--app-accent:#8854ae}
-.option-icon{width:30px;height:30px;margin-right:24px;flex-shrink:0;color:var(--muted)}.option-name{flex:1}.option-detail{flex-shrink:0}
 
-/* Final Minimal Glass specification: one flat canvas and a single local focus. */
-#stage { --text:#f5f2ec;--muted:#c1bdb7;--subtle:#97928b;--surface:rgba(255,255,255,.035);--elevated:rgba(20,20,22,.50);--rim:rgba(255,255,255,.20);--focus:#e7ddca;--focus-fill:rgba(255,255,255,.065);--overlay:rgba(0,0,0,.10);--inner:rgba(255,255,255,.05); }
-#stage.light { --text:#302b25;--muted:#625d56;--subtle:#777169;--surface:rgba(255,255,255,.30);--elevated:rgba(255,255,255,.45);--rim:rgba(255,255,255,.65);--focus:#9b8057;--focus-fill:rgba(255,255,255,.30);--overlay:rgba(48,43,37,.045);--inner:rgba(255,255,255,.20); }
-header { left:580px; }
-#clock { color:#f5f2ec; }.light #clock { color:#312c26; }
-.matrix-digit,.matrix-colon { stroke:none; }
-#toolbar,.input { background:var(--surface);box-shadow:inset 0 1px 0 var(--inner); }
-#toolbar { border-color:var(--rim); }
-#content { left:56px;top:384px;width:1808px; }
-h1 { font-size:28px; }
-#viewport { width:1808px; }
-#tiles { width:1728px; }
-.app { width:268px;margin-right:20px; }
-.surface { width:292px; }
-.tile-glow { width:340px; }
-.logo-inner { width:268px; }
-.label { left:0;right:0;font-weight:400; }
-.app.focused .label { font-weight:500; }
-.app:after { width:268px;box-shadow:inset 0 0 0 1.5px var(--app-accent,var(--focus)); }
-.app.focused .tile-glow,.light .app.focused .tile-glow { opacity:1; }
-.app[data-brand="youtube"]{--app-accent:#ff3b30}.app[data-brand="netflix"]{--app-accent:#e50914}.app[data-brand="primevideo"]{--app-accent:#00a8e1}.app[data-brand="disneyplus"]{--app-accent:#3d8bff}.app[data-brand="max"]{--app-accent:#8b5cf6}.app[data-brand="twitch"]{--app-accent:#9146ff}
-.light .app[data-brand="primevideo"]{--app-accent:#0086b4}.light .app[data-brand="disneyplus"]{--app-accent:#377acb}.light .app[data-brand="max"],.light .app[data-brand="twitch"]{--app-accent:#8450cb}
-#sources { left:104px;top:808px;width:1712px; }
-.input { border-radius:43px; }
-.input.focused { background:var(--focus-fill);box-shadow:inset 0 0 0 1.5px var(--focus); }
-footer { left:104px;right:104px; }
-.pill.focused,.theme-switch.focused { box-shadow:inset 0 0 0 1.5px var(--focus); }
-.mode-selection { background:#f5f2ec;box-shadow:inset 0 0 0 1px rgba(255,255,255,.50); }
-.light .mode-selection { background:#fffcf5; }
-#dialog { width:760px;padding:28px;border-radius:28px;background:var(--elevated);border-color:var(--rim);box-shadow:inset 0 1px 0 var(--inner); }
-#dialog h2 { margin:0 8px 20px;font-size:32px;line-height:42px; }
-.option,.option.group-start { min-height:64px;height:64px;margin-top:8px;padding:14px 16px;border-radius:17px;border:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.025);font-size:24px;line-height:32px; }
-.light .option { background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35); }
-.option.focused { background:var(--focus-fill);box-shadow:inset 0 0 0 1px var(--focus);border-color:var(--focus); }
-.option-icon { width:26px;height:26px;margin-right:20px; }
-.option-detail { font-size:21px;padding-left:16px; }
-#toast { box-shadow:none;background:var(--elevated); }
+#stage {
+  --text:#f4f2ee;--muted:#b9bcc2;--subtle:#8a8f97;
+  --surface:rgba(255,255,255,.055);--surface-2:rgba(255,255,255,.09);--rim:rgba(255,255,255,.14);
+  --focus:#ffffff;--on-focus:#101215;--panel:#16181c;--overlay:rgba(0,0,0,.6);
+  --blue:#4db6ff;--blue-strong:#2f8cff;--blue-soft:rgba(77,182,255,.18);
+  --ease:cubic-bezier(.2,.8,.2,1);
+  position:relative;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;color:var(--text);
+}
+#stage.light {
+  --text:#24211d;--muted:#5d5850;--subtle:#7d776d;
+  --surface:rgba(255,255,255,.55);--surface-2:rgba(255,255,255,.8);--rim:rgba(60,48,30,.14);
+  --focus:#1d1b18;--on-focus:#fffdf8;--panel:#fbf8f2;--overlay:rgba(40,32,20,.35);
+  --blue:#1a7fc1;--blue-strong:#1268a3;--blue-soft:rgba(26,127,193,.14);
+}
 
-/* One low-resolution snapshot behind the glass panel, generated only on open. */
-#dialog { position:relative;overflow:hidden;background:none; }
-.panel-backdrop { position:absolute;inset:0;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none; }
-#dialog:after { content:'';position:absolute;left:0;top:0;right:0;bottom:0;z-index:1;pointer-events:none;background:var(--elevated);box-shadow:inset 0 1px 0 var(--inner);border-radius:inherit; }
-#dialog h2,#options { position:relative;z-index:2; }
+/* ── fond ─────────────────────────────────────────────────────────────── */
+#background { position:absolute;left:0;top:0;width:1920px;height:1080px;background:url('assets/scene-dark.png') center/100% 100% no-repeat;opacity:.6; }
+.light #background { background-image:url('assets/scene-light.png');opacity:1; }
+/* Teinte de l'élément sélectionné : surface de 192×108 agrandie ×10 par la carte graphique. */
+#tints { position:absolute;left:0;top:0;opacity:.55; }
+.light #tints { opacity:.28; }
+.tint { position:absolute;left:0;top:0;width:192px;height:108px;transform:scale(10);transform-origin:0 0;opacity:0;transition:opacity .5s ease; }
+#vignette { position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 42%,rgba(0,0,0,.55) 100%); }
+.light #vignette { background:linear-gradient(180deg,rgba(255,250,240,.4) 0%,rgba(255,250,240,0) 30%,rgba(255,250,240,0) 50%,rgba(255,250,240,.6) 100%); }
 
-/* Only changed pixel digits fold; card focus remains immediate and static. */
-.matrix-overlay { display:none;fill:currentColor; }
-.matrix-overlay.flipping { display:block; }
-.matrix-fold-top,.matrix-fold-bottom { transform-origin:0 0; }
-.flipping .matrix-fold-top { animation:pixel-fold-top 280ms ease-in both; }
-.flipping .matrix-fold-bottom { animation:pixel-fold-bottom 280ms ease-out both; }
-.flipping .matrix-old-bottom { animation:pixel-old-bottom 280ms steps(1,end) both; }
-@keyframes pixel-fold-top { 0%{transform:scaleY(1);opacity:1} 49%,100%{transform:scaleY(0);opacity:.5} }
-@keyframes pixel-fold-bottom { 0%,50%{transform:scaleY(0);opacity:.65} 100%{transform:scaleY(1);opacity:1} }
-@keyframes pixel-old-bottom { 0%,49%{opacity:1} 50%,100%{opacity:0} }
-.reduce-motion .matrix-overlay { display:none!important; }
-@media(prefers-reduced-motion:reduce){.matrix-overlay{display:none!important}}
+/* ── barre du haut ────────────────────────────────────────────────────── */
+#topbar { position:absolute;left:104px;right:104px;top:52px;height:88px;display:flex;align-items:center;justify-content:space-between; }
+#clock-group { display:flex;align-items:center;transform-origin:0 50%;transition:transform 1.4s ease,opacity 1.4s ease; }
+#clock { display:flex;align-items:baseline;font-size:78px;line-height:80px;font-weight:300;letter-spacing:-2.5px;color:var(--text);font-variant-numeric:tabular-nums;font-feature-settings:'tnum'; }
+.clock-sep { margin:0 2px;opacity:.45;font-weight:200;position:relative;top:-6px; }
+#date { margin-left:30px;padding-left:30px;border-left:1px solid var(--rim);display:flex;flex-direction:column;justify-content:center;height:64px; }
+.date-hello { font-size:28px;font-weight:600;line-height:34px;letter-spacing:-.2px; }
+.date-day { font-size:21px;line-height:28px;color:var(--muted); }
+.date-day:first-letter { text-transform:uppercase; }
 
-/* Real app icons for unbranded tiles */
-.app-icon { display:block;width:108px;height:108px;object-fit:contain;border-radius:18px; }
+#toolbar { display:flex;align-items:center; }
+.tool { display:flex;align-items:center;height:60px;padding:0 24px 0 18px;margin-left:12px;border-radius:30px;background:var(--surface);
+  box-shadow:inset 0 0 0 1px var(--rim);color:var(--muted);font-size:22px;font-weight:500;white-space:nowrap;
+  transition:transform .16s var(--ease),background-color .16s ease,color .16s ease; }
+.tool svg { width:26px;height:26px;margin-right:10px;flex-shrink:0; }
+.tool.active { color:var(--text);box-shadow:inset 0 0 0 2px var(--blue); }
+.tool.focused { background:var(--focus);color:var(--on-focus);box-shadow:0 10px 26px rgba(0,0,0,.35);transform:scale(1.06); }
 
-/* HDMI source: blue icon + status dot when active */
-.input.connected .input-symbol { color:#4db6ff; }
-.light .input.connected .input-symbol { color:#1a7fc1; }
-.input small { display:block;font-size:19px;line-height:24px;color:var(--muted); }
-.input.connected small { color:#4db6ff; }
-.light .input.connected small { color:#1a7fc1; }
-@media(prefers-reduced-motion:reduce){.matrix-overlay{display:none!important}}
+/* ── héros : décrit l'élément sélectionné ─────────────────────────────── */
+#hero { position:absolute;left:104px;top:206px;width:1300px; }
+#hero-eyebrow { font-size:20px;font-weight:600;letter-spacing:2.4px;text-transform:uppercase;color:var(--muted);height:28px; }
+#hero-title { margin-top:8px;font-size:78px;line-height:92px;font-weight:700;letter-spacing:-2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:92px; }
+#hero-sub { margin-top:10px;font-size:26px;line-height:34px;color:var(--muted);height:34px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.moving #hero-eyebrow { color:var(--blue); }
 
-/* CSS-based glow div for dynamic dominant color */
-.tile-glow-css { position:absolute;z-index:0;left:-36px;top:-30px;width:340px;height:284px;opacity:0;pointer-events:none;border-radius:50%; }
-.app.focused .tile-glow-css { opacity:1; }
-.light .app.focused .tile-glow-css { opacity:.55; }
-.no-glow .tile-glow-css { display:none; }
+/* ── rangée d'apps ────────────────────────────────────────────────────── */
+#content { position:absolute;left:56px;top:446px;width:1808px; }
+#row-head { display:flex;align-items:baseline;margin:0 48px;height:36px; }
+#heading { font-size:28px;font-weight:600;letter-spacing:-.2px; }
+#heading-meta { margin-left:16px;font-size:21px;color:var(--subtle); }
+#scroll-dots { margin-left:auto;display:flex;align-items:center;height:36px; }
+.scroll-dot { width:8px;height:8px;margin-left:8px;border-radius:4px;background:var(--subtle);opacity:.45;transition:width .2s ease,opacity .2s ease; }
+.scroll-dot.active { width:24px;opacity:1;background:var(--text); }
+#viewport { width:1808px;height:280px;padding:30px 48px 0;overflow:hidden; }
+#tiles { display:flex;flex-wrap:wrap;width:1728px;transition:transform .28s var(--ease); }
 
-/* Loading skeleton */
-.tile-skeleton .logo-inner { background:rgba(255,255,255,.07);border-radius:28px;animation:skeleton-pulse 1.6s ease-in-out infinite; }
-.tile-skeleton .label { background:rgba(255,255,255,.07);border-radius:6px;color:transparent;width:80px;margin:0 auto;animation:skeleton-pulse 1.6s ease-in-out infinite; }
-@keyframes skeleton-pulse { 0%,100%{opacity:.3} 50%{opacity:.6} }
+.app { position:relative;flex-shrink:0;width:268px;height:220px;margin:0 20px 32px 0;text-align:center;overflow:visible;
+  transition:transform .18s var(--ease),opacity .2s ease; }
+.app:nth-child(6n) { margin-right:0; }
 
-/* Scroll indicator dots */
-#scroll-dots { display:flex;justify-content:center;align-items:center;gap:10px;padding-top:14px;height:26px; }
-.scroll-dot { width:8px;height:8px;border-radius:50%;background:var(--subtle);opacity:.4;transition:all .2s; }
-.scroll-dot.active { width:22px;border-radius:4px;background:var(--focus);opacity:1; }
+/* Carte : fond sobre + voile de la couleur de l'app venant du haut. */
+.card { position:absolute;z-index:2;left:0;top:6px;width:268px;height:156px;border-radius:26px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(160deg,var(--accent-wash) 0%,rgba(0,0,0,0) 62%),linear-gradient(180deg,#22262d,#181b20);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 1px 0 rgba(255,255,255,.08),0 8px 20px rgba(0,0,0,.28);
+  transition:box-shadow .18s ease; }
+.app { --accent-wash:rgba(120,140,170,.14); }
+.app[data-brand] { --accent-wash:rgba(255,255,255,.05); }
+.app[data-brand="youtube"]{--accent-wash:rgba(255,59,48,.20)}.app[data-brand="netflix"]{--accent-wash:rgba(229,9,20,.22)}
+.app[data-brand="primevideo"]{--accent-wash:rgba(0,168,225,.22)}.app[data-brand="disneyplus"]{--accent-wash:rgba(61,139,255,.24)}
+.app[data-brand="max"]{--accent-wash:rgba(139,92,246,.24)}.app[data-brand="twitch"]{--accent-wash:rgba(145,70,255,.24)}
+.app[data-brand="spotify"]{--accent-wash:rgba(30,215,96,.18)}.app[data-brand="plex"]{--accent-wash:rgba(229,160,13,.20)}
+.app[data-brand="crunchyroll"]{--accent-wash:rgba(244,117,33,.22)}.app[data-brand="appletv"]{--accent-wash:rgba(200,200,210,.12)}
+.light .card { background:linear-gradient(160deg,var(--accent-wash) 0%,rgba(255,255,255,0) 62%),linear-gradient(180deg,#ffffff,#f4f0e8);
+  box-shadow:inset 0 0 0 1px rgba(60,48,30,.08),0 8px 18px rgba(60,48,30,.10); }
+.logo { display:block;width:120px;height:82px;object-fit:contain; }
+.logo-netflix { width:52px;height:78px; }.logo-youtube { width:112px;height:78px; }.logo-primevideo { width:146px;height:78px; }
+.logo-disneyplus { width:180px;height:104px; }.logo-twitch { width:72px;height:76px; }.logo-max { width:152px;height:100px; }
+.app-icon { display:block;width:100px;height:100px;object-fit:contain;border-radius:22px; }
+.fallback { font-size:64px;font-weight:600;line-height:1;color:var(--text); }
+.label { position:absolute;z-index:2;left:0;right:0;top:176px;font-size:24px;line-height:32px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .18s ease; }
 
-/* HDMI allumé : toute la tuile passe en bleu (bordure, halo, point lumineux). */
-.input-status.connected { background:#4db6ff;box-shadow:0 0 10px #4db6ff,0 0 3px #fff; }
-.light .input-status.connected { background:#1a7fc1;box-shadow:0 0 8px rgba(26,127,193,.6); }
-.input.connected { border-color:rgba(77,182,255,.6);background:linear-gradient(145deg,rgba(77,182,255,.20),rgba(77,182,255,.05)),var(--surface);box-shadow:inset 0 0 0 1px rgba(77,182,255,.35),0 0 24px rgba(77,182,255,.25); }
-.light .input.connected { border-color:rgba(26,127,193,.55);background:linear-gradient(145deg,rgba(26,127,193,.14),rgba(26,127,193,.03)),var(--surface);box-shadow:inset 0 0 0 1px rgba(26,127,193,.3),0 0 18px rgba(26,127,193,.18); }
-.input.connected .input-name { color:#e3f3ff; }
-.light .input.connected .input-name { color:#0b4f7d; }
-.input.connected.focused { background:linear-gradient(145deg,rgba(77,182,255,.30),rgba(77,182,255,.10)),var(--focus-fill);box-shadow:0 0 0 2px var(--focus),0 0 34px rgba(77,182,255,.45); }
-/* HDMI éteint : discret. */
-.input:not(.connected) .input-symbol { opacity:.55; }
-/* Message : opaque et placé entre les apps et les sources, pour rester lisible. */
-#toast { bottom:auto;top:690px;padding:18px 24px;background:#1b1d21;font-size:24px; }
-.light #toast { background:#fffdf8; }
+/* Focus : la carte grandit, anneau blanc détaché, ombre portée et lueur de marque. */
+.app.focused { transform:scale(1.08); }
+/* Lueur : une seule ombre floue teintée de la couleur de l'app (rendu peu coûteux). */
+.app.focused .card { box-shadow:0 0 0 3px var(--focus),0 0 0 7px rgba(255,255,255,.12),0 24px 60px -14px var(--app-accent,rgba(0,0,0,.6)),0 18px 36px rgba(0,0,0,.45); }
+.no-glow .app.focused .card { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(0,0,0,.45); }
+.light .app.focused .card { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(60,48,30,.22); }
+.app.focused .label { color:var(--text);font-weight:600; }
 
-/* ---- 0.8 : finitions de l'interface ---- */
-/* Titre des sources : nombre d'appareils allumés, en bleu. */
-.sources-count { color:#4db6ff;font-size:23px; }
-.light .sources-count { color:#1a7fc1; }
-/* Dernière source utilisée : petit liseré sous la tuile. */
-.input.recent:before { content:'';position:absolute;left:50%;bottom:-11px;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--muted);opacity:.7; }
-.input.connected.recent:before { background:#4db6ff;opacity:1; }
-.input-copy { min-width:0; }
-.input-name { display:block;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-/* Aide contextuelle un peu plus lisible. */
-#hint { color:var(--muted); }
-/* Veille anti-marquage : seule l'heure reste, atténuée. Simples fondus d'opacité (composités). */
-#toolbar,#content,#sources,footer,#date,#background { transition:opacity 1.4s ease; }
-header { transition:opacity 1.4s ease,transform 1.4s ease; }
-#stage.ambient #toolbar,#stage.ambient #content,#stage.ambient #sources,#stage.ambient footer,#stage.ambient #toast { opacity:0; }
-#stage.ambient #background { opacity:.25; }
-#stage.ambient header { opacity:.45; }
-#stage.ambient #date { opacity:.6; }
-/* OLED : noir pur derrière tout (pixels éteints), et place pour le point d'état. */
-html,body { background:#000; }
-.input { padding-right:46px; }
+/* Appui long : une barre se remplit en bas de la carte (après un court délai). */
+.hold-bar { position:absolute;left:0;bottom:0;width:100%;height:5px;background:var(--blue);transform:scaleX(0);transform-origin:0 50%;opacity:0; }
+.holding .hold-bar { opacity:1;transform:scaleX(1);transition:transform .53s linear .12s,opacity .1s linear .12s; }
+
+/* Tuile « Ajouter ». */
+.add-tile .card { background:transparent;box-shadow:inset 0 0 0 2px var(--rim);color:var(--muted); }
+.add-icon { width:56px;height:56px; }
+.add-tile.focused .card { background:var(--surface-2);color:var(--text);box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(0,0,0,.4); }
+
+/* Pastille « épinglée » (Toutes les apps) et coche (Choisir les favoris). */
+.fav-badge { position:absolute;z-index:4;top:16px;right:10px;width:38px;height:38px;border-radius:19px;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.45);box-shadow:inset 0 0 0 2px rgba(255,255,255,.35);color:transparent; }
+.fav-badge svg { width:22px;height:22px; }
+.fav-badge.on { background:var(--blue-strong);box-shadow:0 4px 12px rgba(0,0,0,.35);color:#fff; }
+.app:not(.focused) .fav-badge:not(.on) { opacity:0; }
+.light .fav-badge { background:rgba(255,255,255,.75);box-shadow:inset 0 0 0 2px rgba(0,0,0,.2); }
+.light .fav-badge.on { background:var(--blue-strong); }
+
+/* Mode Organiser : poignée sur chaque carte ; l'app saisie est soulevée, les autres en retrait. */
+.organizing .app:not(.add-tile) .card:before { content:'';position:absolute;top:12px;left:50%;width:34px;height:5px;margin-left:-17px;border-radius:3px;background:rgba(255,255,255,.28); }
+.light.organizing .app:not(.add-tile) .card:before { background:rgba(0,0,0,.18); }
+.moving .app { opacity:.4; }
+.moving .app.picked { opacity:1;transform:translateY(-18px) scale(1.1);z-index:5; }
+.app.picked .card { box-shadow:0 0 0 3px var(--blue),0 26px 50px rgba(0,0,0,.55); }
+.app.picked:before { content:'◀ ▶';position:absolute;z-index:6;left:-30px;right:-30px;top:70px;font-size:22px;line-height:24px;color:var(--blue);text-align:justify;text-align-last:justify; }
+
+/* Chargement. */
+.tile-skeleton .card { background:var(--surface-2); }
+.empty-state { padding:40px 0;font-size:26px;color:var(--muted); }
+
+/* ── sources ──────────────────────────────────────────────────────────── */
+#sources { position:absolute;left:104px;top:806px;width:1712px; }
+#sources-title { font-size:28px;font-weight:600;letter-spacing:-.2px;height:36px; }
+.sources-count { margin-left:16px;font-size:21px;font-weight:400;color:var(--blue); }
+#input-row { display:flex;margin-top:22px; }
+.input { position:relative;overflow:hidden;display:flex;align-items:center;width:304px;height:92px;padding:0 48px 0 16px;margin-right:20px;border-radius:46px;
+  background:var(--surface);box-shadow:inset 0 0 0 1px var(--rim);color:var(--text);transition:transform .16s var(--ease); }
+.input-symbol { width:60px;height:60px;padding:15px;flex-shrink:0;margin-right:14px;border-radius:30px;background:var(--surface-2);color:var(--muted); }
+.input-copy { display:block;min-width:0; }
+.input-name { display:block;max-width:180px;font-size:24px;font-weight:600;line-height:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.input-state { display:block;font-size:18px;line-height:24px;color:var(--muted);white-space:nowrap; }
+.input-status { position:absolute;right:24px;top:40px;width:12px;height:12px;border-radius:6px;background:var(--subtle);opacity:.6; }
+/* Appareil allumé : tout passe en bleu. */
+.input.connected { background:linear-gradient(135deg,rgba(77,182,255,.22),rgba(77,182,255,.06));box-shadow:inset 0 0 0 1.5px rgba(77,182,255,.6),0 0 26px rgba(47,140,255,.22); }
+.input.connected .input-symbol { background:var(--blue-strong);color:#fff; }
+.input.connected .input-state { color:var(--blue); }
+.input.connected .input-status { background:var(--blue);opacity:1;box-shadow:0 0 10px var(--blue); }
+.light .input.connected { background:linear-gradient(135deg,rgba(26,127,193,.14),rgba(26,127,193,.04));box-shadow:inset 0 0 0 1.5px rgba(26,127,193,.5); }
+/* Dernière source utilisée. */
+.input.recent:before { content:'';position:absolute;left:50%;bottom:8px;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--muted);opacity:.7; }
+.input.connected.recent:before { background:var(--blue);opacity:1; }
+.input.focused { transform:scale(1.05);box-shadow:inset 0 0 0 3px var(--focus),0 14px 30px rgba(0,0,0,.35); }
+.input.connected.focused { box-shadow:inset 0 0 0 3px var(--focus),0 0 36px rgba(47,140,255,.45); }
+
+/* ── bas d'écran ──────────────────────────────────────────────────────── */
+footer { position:absolute;left:104px;right:104px;bottom:38px;display:flex;justify-content:space-between;font-size:20px;color:var(--subtle); }
+
+/* ── menus ────────────────────────────────────────────────────────────── */
+#modal { position:absolute;z-index:10;left:0;top:0;width:1920px;height:1080px;background:var(--overlay);display:flex;align-items:center;justify-content:center; }
+#dialog { width:720px;padding:34px 30px 30px;border-radius:30px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--rim),0 30px 80px rgba(0,0,0,.55); }
+#dialog.grid { width:900px; }
+#dialog-title { margin:0 10px;font-size:34px;line-height:42px;font-weight:700;letter-spacing:-.5px; }
+#dialog-sub { margin:6px 10px 0;font-size:21px;line-height:28px;color:var(--muted); }
+#options { margin-top:22px; }
+#dialog.grid #options { display:flex;flex-wrap:wrap;justify-content:space-between; }
+.option { display:flex;align-items:center;width:100%;height:66px;padding:0 20px;margin-top:8px;border-radius:18px;background:var(--surface);font-size:24px; }
+#dialog.grid .option { width:416px; }
+.option.group-start { margin-top:22px; }
+.option-icon { width:28px;height:28px;margin-right:18px;flex-shrink:0;color:var(--muted); }
+.option-name { flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.option-detail { margin-left:14px;padding:4px 14px;border-radius:14px;background:var(--surface-2);font-size:19px;color:var(--muted);white-space:nowrap; }
+.option-check { width:26px;height:26px;margin-left:12px;color:var(--blue); }
+.option.focused { background:var(--focus);color:var(--on-focus); }
+.option.focused .option-icon,.option.focused .option-detail { color:var(--on-focus); }
+.option.focused .option-detail { background:rgba(128,128,128,.18); }
+.option.focused .option-check { color:var(--blue-strong); }
+
+#toast { position:absolute;z-index:20;right:104px;top:236px;max-width:640px;padding:18px 28px;border-radius:24px;text-align:left!important;
+  background:var(--panel);box-shadow:inset 0 0 0 1px var(--rim),0 14px 40px rgba(0,0,0,.45);font-size:23px;line-height:30px;text-align:center; }
+
+/* ── veille anti-marquage : seule l'heure reste, atténuée ─────────────── */
+#hero,#content,#sources,footer,#toolbar,#date,#background,#tints,#vignette { transition:opacity 1.4s ease; }
+.ambient #hero,.ambient #content,.ambient #sources,.ambient footer,.ambient #toolbar,.ambient #toast,.ambient #tints,.ambient #vignette { opacity:0; }
+.ambient #background { opacity:.15; }
+.ambient #clock-group { opacity:.5; }
+.ambient #date { opacity:.7; }
+
+/* ── animations réduites ──────────────────────────────────────────────── */
+.reduce-motion *,.reduce-motion *:before,.reduce-motion *:after { transition:none!important; }
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; } }
