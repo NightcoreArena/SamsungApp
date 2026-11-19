@@ -212,3 +212,31 @@ footer { position:absolute;left:104px;right:104px;bottom:38px;display:flex;justi
 /* ── animations réduites ──────────────────────────────────────────────── */
 .reduce-motion *,.reduce-motion *:before,.reduce-motion *:after { transition:none!important; }
 @media (prefers-reduced-motion:reduce) { * { transition:none!important; } }
+
+/* ── Mode léger (par défaut) : pensé pour la puce graphique d'une TV ─────────
+   Un seul calque fixe : ni teinte d'ambiance, ni voile, ni ombre floue, ni animation.
+   Chaque déplacement ne redessine que les deux tuiles concernées. */
+.lite #tints,.lite #vignette { display:none; }
+.lite #tiles { transition:none;will-change:auto; }
+.lite .card,.light.lite .card { box-shadow:inset 0 0 0 1px rgba(255,255,255,.09); }
+.light.lite .card { box-shadow:inset 0 0 0 1px rgba(60,48,30,.12); }
+.lite .app:after,.lite.no-glow .app:after,.light.lite .app:after { box-shadow:0 0 0 3px var(--focus); }
+.lite .app.picked .card { box-shadow:0 0 0 3px var(--blue); }
+.lite .tool.focused { box-shadow:none;transform:none; }
+.lite .input.connected { box-shadow:inset 0 0 0 1.5px rgba(77,182,255,.65); }
+.lite .input.focused,.lite .input.connected.focused { box-shadow:inset 0 0 0 3px var(--focus);transform:none; }
+.lite .input.connected .input-status { box-shadow:none; }
+.lite #dialog { box-shadow:inset 0 0 0 1px var(--rim); }
+.lite #toast { box-shadow:inset 0 0 0 1px var(--rim); }
+.lite .fav-badge.on { box-shadow:none; }
+.lite #hero,.lite #content,.lite #sources,.lite footer,.lite #toolbar,.lite #date,.lite #background,.lite #clock-group,.lite .scroll-dot { transition:none; }
+.lite .holding .hold-bar { transition:transform .53s linear .12s; }
+
+/* ── Bascule de source : réponse immédiate à l'appui ───────────────────────── */
+#switching { position:absolute;z-index:30;left:0;top:0;width:1920px;height:1080px;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#f4f2ee; }
+.switching-name { font-size:64px;font-weight:700;letter-spacing:-1px; }
+.switching-sub { margin-top:14px;font-size:26px;color:#9aa0a8; }
+
+/* Mode instantané : l'image de la source est affichée par la TV, l'interface s'efface. */
+html.watching,html.watching body { background:transparent; }
+.watching > *:not(#toast) { visibility:hidden; }

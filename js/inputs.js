@@ -84,6 +84,10 @@
         return call(function (ok, err) { tizen.tvwindow.setSource(src, ok, err, 'MAIN'); }, 'Changement de source');
     }
 
+    var FULL = ['0px', '0px', '1920px', '1080px'];
+    function show() {
+        return call(function (ok, err) { tizen.tvwindow.show(ok, err, FULL, 'MAIN'); }, 'Affichage de la source');
+    }
     function hide() {
         return call(function (ok, err) { tizen.tvwindow.hide(ok, err, 'MAIN'); }, 'Masquer la source');
     }
@@ -114,11 +118,16 @@
             return openPicker().then(function () { busy = false; return 'picker'; },
                 function () { busy = false; throw err; });
         };
+        var t0 = Date.now(); window.FLIX_SWITCH_T = { start: t0, method: method };
         return findHdmi(hdmi).then(function (src) {
+            window.FLIX_SWITCH_T.found = Date.now() - t0;
             var switched = setSource(src).then(function () { invalidate(); return true; },
                 function (e) { if (method !== 'samsung') throw e; return false; });
             return switched.then(function () {
+                window.FLIX_SWITCH_T.setSource = Date.now() - t0;
                 if (method === 'switch') return 'switch';
+                // Instantané : l'image de la source s'affiche dans Flix Home, sans lancer d'autre app.
+                if (method === 'inapp') return show().then(function () { return 'inapp'; });
                 if (method === 'viewer') return openViewer().then(function () { return 'viewer'; });
                 // Lecteur avec paramètres natifs ; s'il refuse, lecteur simple.
                 return openNative(hdmi).then(function () { return 'samsung'; },
@@ -135,6 +144,7 @@
         describeSource: describeSource,
         open: open,
         hide: hide,
+        show: show,
         openViewer: openViewer,
         openPicker: openPicker,
         openNative: openNative

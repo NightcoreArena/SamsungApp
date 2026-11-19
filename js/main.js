@@ -27,7 +27,7 @@
  var tilesHash='',focusedEl=null,appsLoadedAt=0,installedIds='';
 
  // ── préférences ─────────────────────────────────────────────────────────
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto'};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto',effects:'lite'};
  try{
   var saved=JSON.parse(localStorage.getItem(KEY));
   if(saved&&Array.isArray(saved.order)){
@@ -40,6 +40,7 @@
    if(saved.opened&&typeof saved.opened==='object')prefs.opened=saved.opened;
    if(typeof saved.wallpaper==='string')prefs.wallpaper=saved.wallpaper;
    prefs.weather=saved.weather!==false;if(typeof saved.city==='string')prefs.city=saved.city;
+   prefs.effects=saved.effects==='full'?'full':'lite';
   }
  }catch(e){}
  function save(){try{localStorage.setItem(KEY,JSON.stringify(prefs));}catch(e){toast('Impossible de sauvegarder les réglages.');}}
@@ -84,11 +85,13 @@
   s.classList.toggle('no-glow',!prefs.glow);
   s.classList.toggle('light',prefs.theme==='light');
   s.setAttribute('data-wall',prefs.wallpaper);
+  s.classList.toggle('lite',prefs.effects!=='full');
  }
  // La teinte suit la sélection seulement quand on s'y arrête (0,22 s) : pendant une
  // navigation rapide, aucun fondu plein écran (c'était le principal coût d'affichage).
  var tintCur=0,tintColor='',tintWanted='',tintTimer=null;
  function setTint(color){
+  if(prefs.effects!=='full')return; // mode léger : pas de teinte d'ambiance
   tintWanted=color;clearTimeout(tintTimer);
   if(color===tintColor)return;
   tintTimer=setTimeout(applyTint,150);
@@ -306,9 +309,9 @@
  ];
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
  var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
- var METHODS={samsung:'Samsung (natif)',simple:'Lecteur TV simple',switch:'Source seule'},METHOD_ORDER=['samsung','simple','switch'];
+ var METHODS={samsung:'Samsung (natif)',inapp:'Instantané',simple:'Lecteur TV simple',switch:'Source seule'},METHOD_ORDER=['samsung','inapp','simple','switch'];
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
- function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return m==='switch'||m==='simple'?m:'samsung';}
+ function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]?m:'samsung';}
  function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
  function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
@@ -343,12 +346,33 @@
  function openInput(a){
   var name=inputLabel(a);
   if(preview){toast('Aperçu : passage sur '+name);return;}
-  toast(a.connected?name+'…':name+' semble éteint, passage quand même…');
   var m=inputMethod(a);
+  // Réponse immédiate à l'appui : écran noir avec le nom, pendant que la TV bascule.
+  switching(name,a.connected);
   Inputs.open(a.hdmi,m==='simple'?'viewer':m).then(function(r){
-   if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;save();renderInputs();}
-   if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
-  },failure);
+   if(window.FLIX_SWITCH_T){window.FLIX_SWITCH_T.done=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
+   if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;}
+   if(r==='inapp'){watching=a;$('stage').classList.add('watching');document.documentElement.classList.add('watching');switching(null);return;}
+   if(r==='picker'){switching(null);toast('Choisissez '+name+' dans le menu des sources Samsung.');}
+   if(r==='switch')setTimeout(function(){switching(null);},1200);
+   // Sinon l'écran reste noir jusqu'à ce que le lecteur Samsung passe devant (filet : 6 s).
+   switchTimer=setTimeout(function(){switching(null);},6000);
+  },function(e){switching(null);failure(e);});
+ }
+ var watching=null,switchTimer=null;
+ function switching(name,on){
+  clearTimeout(switchTimer);
+  var o=$('switching');
+  if(!name){o.classList.add('hidden');return;}
+  o.textContent='';o.appendChild(el('div','switching-name',name));
+  o.appendChild(el('div','switching-sub',on===false?'L\'appareil semble éteint…':'Ouverture…'));
+  o.classList.remove('hidden');
+ }
+ // Retour depuis une source affichée en mode instantané.
+ function stopWatching(){
+  if(!watching)return;watching=null;$('stage').classList.remove('watching');document.documentElement.classList.remove('watching');
+  try{Inputs.hide().catch(function(){});}catch(e){}
+  renderInputs();focus();
  }
  function inputMenu(a){
   var m=inputMethod(a);
@@ -466,18 +490,48 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.2',[
+  openMenu('Réglages','Flix Home 1.3',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
-   {label:'Animations',detail:prefs.reduceMotion?'Réduites':'Normales',icon:I.motion,keep:true,run:function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();settings();}},
+   {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
    {label:'Veille anti-marquage',detail:prefs.ambient?'Après 3 min':'Désactivée',icon:I.moon,keep:true,run:function(){prefs.ambient=!prefs.ambient;save();poke();settings();}},
    {label:'Fond d\'écran',detail:wallName(prefs.wallpaper),icon:I.wallpaper,group:true,run:function(){wallpaperMenu();}},
    {label:'Météo',detail:prefs.weather?'Affichée':'Masquée',icon:I.sun,keep:true,run:function(){prefs.weather=!prefs.weather;save();weather(true);settings();}},
    {label:'Ville de la météo',detail:prefs.city==='auto'?'Automatique':prefs.city,icon:I.sources,run:function(){cityMenu();}},
    {label:'Sources Samsung',icon:I.sources,group:true,run:function(){launch('org.tizen.SMSourceAPP');}},
    {label:'Accueil Samsung',icon:I.home,run:function(){launch('com.samsung.tv.csfs');}},
-   {label:'Recharger les apps',icon:I.refresh,run:function(){load(true);toast('Liste des apps rechargée');}}
+   {label:'Recharger les apps',icon:I.refresh,run:function(){load(true);toast('Liste des apps rechargée');}},
+   {label:'Diagnostic',detail:'mesures de cette TV',icon:I.motion,run:function(){diagnostics();}}
   ]);
+ }
+
+ // ── diagnostic : mesures réelles sur la TV ──────────────────────────────
+ var DIAG_KEY='flixhome.diag.v1',diag=(function(){try{return JSON.parse(localStorage.getItem(DIAG_KEY))||{};}catch(e){return{};}})();
+ function saveDiag(k,v){diag[k]=v;try{localStorage.setItem(DIAG_KEY,JSON.stringify(diag));}catch(e){}}
+ // Images/s pendant la navigation : on chronomètre les images qui suivent chaque touche.
+ var navFrames=[],sampling=0;
+ function sampleFrames(){
+  if(sampling)return;sampling=1;var last=performance.now(),end=last+500;
+  (function tick(t){navFrames.push(t-last);last=t;if(navFrames.length>400)navFrames.splice(0,100);if(t<end)requestAnimationFrame(tick);else sampling=0;})(last);
+ }
+ function navStats(){
+  var f=navFrames.slice(1);if(f.length<10)return null;
+  var avg=f.reduce(function(a,b){return a+b;},0)/f.length,slow=f.filter(function(x){return x>50;}).length;
+  return{fps:Math.round(1000/avg),slow:slow,worst:Math.round(Math.max.apply(null,f))};
+ }
+ function diagnostics(){
+  var n=navStats(),sw=diag.switch,b=diag.boot||{},ua=navigator.userAgent.match(/Chrome\/(\d+)/);
+  var rows=[
+   {label:'Navigation',detail:n?n.fps+' i/s · '+n.slow+' saccades · pire '+n.worst+' ms':'déplacez-vous puis rouvrez',icon:I.motion},
+   {label:'Démarrage (accueil affiché)',detail:b.firstPaint!=null?b.firstPaint+' ms':'—',icon:I.home},
+   {label:'Liste des apps (TV)',detail:b.apps!=null?b.apps+' ms':'—',icon:I.grid},
+   {label:'Liste des sources (TV)',detail:b.sources!=null?b.sources+' ms':'—',icon:I.sources},
+   {label:'Dernière bascule',detail:sw?(METHODS[sw.method==='viewer'?'simple':sw.method]||sw.method)+' : source réglée '+(sw.setSource!=null?sw.setSource:'?')+' ms'+(sw.left!=null?', Flix Home quittée '+sw.left+' ms':sw.method==='inapp'?', affichée '+sw.done+' ms':''):'aucune',icon:I.hdmi},
+   {label:'Navigateur de la TV',detail:ua?'Chromium '+ua[1]:'?',icon:I.gear},
+   {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers',icon:I.glow}
+  ];
+  rows.forEach(function(r){r.run=function(){};});
+  openMenu('Diagnostic','Faites une capture de cet écran et envoyez-la : elle montre où part le temps.',rows);
  }
 
  // ── modes ───────────────────────────────────────────────────────────────
@@ -591,12 +645,13 @@
  document.addEventListener('keydown',function(e){
   var c=e.keyCode;
   if(ambient){e.preventDefault();swallowUp=true;setAmbient(false);return;}
+  if(watching){if(c===10009||c===27||c===8){e.preventDefault();stopWatching();}return;}
   poke();
   if([13,37,38,39,40,10009,27,8].indexOf(c)<0)return;e.preventDefault();
   // Flèche maintenue : au plus une case toutes les 90 ms, pour que l'affichage suive.
   if(e.repeat&&c>=37&&c<=40){var now=Date.now();if(now-lastRepeat<90)return;lastRepeat=now;}
   if(c===13){if(hold||held)return;if(focusedEl&&!menu&&section)focusedEl.classList.add('holding');hold=setTimeout(function(){hold=null;held=true;clearHolding();longPress();},HOLD_MS);return;}
-  if(c===10009||c===27||c===8)back();else arrow(c);
+  if(c===10009||c===27||c===8)back();else{arrow(c);sampleFrames();}
  });
  document.addEventListener('keyup',function(e){
   if(swallowUp){swallowUp=false;return;}
@@ -611,7 +666,8 @@
  // ── chargement ──────────────────────────────────────────────────────────
  // Liste des apps gardée en mémoire : au démarrage, l'accueil s'affiche tout de suite
  // avec la dernière liste connue, puis se met à jour quand la TV a répondu.
- var APPS_KEY='flixhome.apps.v1';
+ var APPS_KEY='flixhome.apps.v1',T_START=Date.now(),bootDiag={},diagBooted={};
+ function bootMark(k){if(bootDiag[k]==null){bootDiag[k]=Date.now()-T_START;saveDiag('boot',bootDiag);}}
  function cachedApps(){try{var c=JSON.parse(localStorage.getItem(APPS_KEY));return Array.isArray(c)?c:null;}catch(e){return null;}}
  function storeApps(list){try{localStorage.setItem(APPS_KEY,JSON.stringify(list.map(function(a){return{id:a.id,name:a.name,label:a.label,iconPath:a.iconPath||''};})));}catch(e){}}
  function load(force){
@@ -624,10 +680,12 @@
   }
   if(!hasApps){
    var c=cachedApps();
-   if(c&&c.length){installed=c;hasApps=true;installedIds='cache';renderTiles(true);focusLastApp();focus();}
+   if(c&&c.length){installed=c;hasApps=true;installedIds='cache';renderTiles(true);focusLastApp();focus();bootMark('firstPaint');}
    else{loadingApps=true;renderTiles(true);focus();}
   }
+  var tA=Date.now();
   Apps.getInstalledApps().then(function(list){
+   if(!diagBooted.apps){diagBooted.apps=1;bootDiag.apps=Date.now()-tA;}
    loadingApps=false;
    installed=Apps.launchable(list).filter(function(a){return Apps.describe(a).consumer||defaults.indexOf(a.id)>=0;});
    if(appById('org.tizen.netflix-app'))installed=installed.filter(function(a){return a.id!=='RN1MCdNq8t.Netflix';});
@@ -638,9 +696,10 @@
    var first=!installedIds||installedIds==='cache';installedIds=ids;storeApps(installed);renderTiles(true);
    // Au démarrage, le focus revient sur la dernière app ouverte.
    if(first&&section===1&&index===0)focusLastApp();
-   focus();
+   focus();bootMark('firstPaint');
   },function(e){loadingApps=false;renderTiles(true);focus();failure(e);});
-  Inputs.sources(true).then(function(info){inputs=buildInputs(info);renderInputs();updateHero();},
+  var tS=Date.now();
+  Inputs.sources(true).then(function(info){if(!diagBooted.sources){diagBooted.sources=1;bootDiag.sources=Date.now()-tS;saveDiag('boot',bootDiag);}inputs=buildInputs(info);renderInputs();updateHero();},
    function(){inputs=[{id:'org.tizen.SMSourceAPP',label:'Sources Samsung'},{id:'org.tizen.tv-viewer',label:'Télévision'}];renderInputs();});
  }
 
@@ -648,7 +707,10 @@
  function scale(){if(preview)$('stage').style.transform='scale('+Math.min(window.innerWidth/1920,window.innerHeight/1080)+')';}
  // Retour sur l'accueil : heure, sources, et apps (nouvelles installations) au plus une fois par minute.
  document.addEventListener('visibilitychange',function(){
-  if(document.hidden){clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);return;}
+  if(document.hidden){
+   if(window.FLIX_SWITCH_T&&!window.FLIX_SWITCH_T.left){window.FLIX_SWITCH_T.left=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
+   clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);stopWatching();return;}
+  switching(null);if(prefs.lastInput)renderInputs();
   if(ambient)setAmbient(false);else poke();
   clock();refreshInputs(true);weather();
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
