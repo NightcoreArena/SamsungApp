@@ -355,7 +355,7 @@
   switching(name,a.connected);
   watchHandoff=m==='hybrid';
   window.FLIX_ON_SHOW=function(){watching=a;$('stage').classList.add('watching');document.documentElement.classList.add('watching');switching(null);};
-  Inputs.open(a.hdmi,m==='simple'?'viewer':m).then(function(r){
+  Inputs.open(a.hdmi,m==='simple'?'viewer':m,name).then(function(r){
    if(window.FLIX_SWITCH_T){window.FLIX_SWITCH_T.done=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
    if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;}
    if(r==='hybrid'){if(!watching)window.FLIX_ON_SHOW();return;}
@@ -501,7 +501,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.5',[
+  openMenu('Réglages','Flix Home 1.6',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},

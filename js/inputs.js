@@ -96,22 +96,34 @@
     function openViewer() { return Apps.launch(VIEWER_APP); }
     function openPicker() { return Apps.launch(SOURCE_APP); }
 
-    // Le lecteur TV avec les paramètres du menu Sources Samsung.
-    function openNative(n) {
-        return call(function (ok, err) {
-            var id = String(HDMI_SOURCE_ID + n);
-            var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null, [
-                new tizen.ApplicationControlData('change_source', [id]),
-                new tizen.ApplicationControlData('sourceType', [id]),
-                new tizen.ApplicationControlData('mbrIndex', ['-2'])
-            ]);
-            tizen.application.launchAppControl(ctrl, VIEWER_APP, ok, err);
-        }, 'Lecteur TV');
+    // Le lecteur TV avec exactement les paramètres de la tuile Source de Samsung (chemin
+    // « SourceChangeViaTVViewer », relevé dans le lanceur Vetro) : numéro de source (HDMI 1-4 =
+    // 13-16), nom, icône de l'appareil (le lecteur refuse une icône absente), profil d'appareil
+    // et demandeur « user ». Sans ces champs, le lecteur bascule par un chemin de repli qui
+    // n'applique pas les réglages de l'entrée (Mode Jeu…).
+    var ICON_DIR = '/usr/apps/com.samsung.tv.theme-resource/shared/res/org.tizen.menu/Settings_Popup/device_icon/';
+    function openNative(n, name) {
+        var id = String(HDMI_SOURCE_ID + n);
+        var fields = [
+            ['change_source', id], ['sourceType', id], ['sourceName', name || 'HDMI ' + n],
+            ['sourceIcon', ICON_DIR + 'r_icon_device_s_hdmi' + n + '.png'], ['mbrIndex', '-2']
+        ];
+        function send(withRequestor) {
+            return call(function (ok, err) {
+                var data = fields.concat(withRequestor ? [['__K_EX_LAUNCH_REQUESTOR', 'user']] : []).map(function (f) {
+                    return new tizen.ApplicationControlData(f[0], [f[1]]);
+                });
+                var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null, data);
+                tizen.application.launchAppControl(ctrl, VIEWER_APP, ok, err);
+            }, 'Lecteur TV');
+        }
+        // Le champ réservé __K_EX_LAUNCH_REQUESTOR peut être refusé à une app web : on réessaie sans.
+        return send(true).then(null, function () { return send(false); });
     }
 
     // Résout 'samsung', 'viewer', 'switch' ou 'picker' (repli sur le menu des sources).
     var busy = false;
-    function open(hdmi, method) {
+    function open(hdmi, method, label) {
         if (busy) return Promise.reject(new Error('Changement de source déjà en cours'));
         busy = true;
         var done = function (v) { busy = false; return v; };
@@ -124,7 +136,7 @@
         // (Régler d'abord la source nous-mêmes faisait basculer deux fois : deux resynchronisations
         // HDMI, soit deux écrans noirs.) S'il refuse, on règle la source puis on ouvre le lecteur.
         if (method === 'samsung' && window.tizen && tizen.ApplicationControl) {
-            return openNative(hdmi).then(function () {
+            return openNative(hdmi, label).then(function () {
                 window.FLIX_SWITCH_T.setSource = Date.now() - t0;
                 return 'samsung';
             }, function () {
