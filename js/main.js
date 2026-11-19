@@ -27,7 +27,7 @@
  var tilesHash='',focusedEl=null,appsLoadedAt=0,installedIds='';
 
  // ── préférences ─────────────────────────────────────────────────────────
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},methodsV2:true,lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto',effects:'lite'};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},methodsV3:true,lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto',effects:'lite'};
  try{
   var saved=JSON.parse(localStorage.getItem(KEY));
   if(saved&&Array.isArray(saved.order)){
@@ -37,8 +37,9 @@
    if(saved.inputNames&&typeof saved.inputNames==='object')prefs.inputNames=saved.inputNames;
    if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
    // 1.4 : « Instantané » ne donnait pas le Mode Jeu ; ces sources passent à « Rapide + Mode Jeu ».
-   if(!saved.methodsV2){Object.keys(prefs.inputMethods).forEach(function(k){if(prefs.inputMethods[k]==='inapp'||prefs.inputMethods[k]==='samsung')delete prefs.inputMethods[k];});}
-   prefs.methodsV2=true;
+   // 1.5 : retour au mode Samsung (comme le menu Sources) par défaut pour toutes les sources.
+   if(!saved.methodsV3)prefs.inputMethods={};
+   prefs.methodsV3=true;
    prefs.lastInput=Number(saved.lastInput)||0;prefs.lastApp=typeof saved.lastApp==='string'?saved.lastApp:'';prefs.ambient=saved.ambient!==false;
    if(saved.opened&&typeof saved.opened==='object')prefs.opened=saved.opened;
    if(typeof saved.wallpaper==='string')prefs.wallpaper=saved.wallpaper;
@@ -312,9 +313,9 @@
  ];
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
  var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
- var METHODS={hybrid:'Rapide + Mode Jeu',samsung:'Samsung (natif)',inapp:'Instantané (sans Mode Jeu)',simple:'Lecteur TV simple',switch:'Source seule'},METHOD_ORDER=['hybrid','samsung','inapp','simple','switch'];
+ var METHODS={samsung:'Samsung (comme le menu Sources)',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',simple:'Lecteur TV simple',switch:'Source seule'},METHOD_ORDER=['samsung','inapp','hybrid','simple','switch'];
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
- function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]?m:'hybrid';}
+ function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]?m:'samsung';}
  function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
  function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
@@ -500,7 +501,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.4',[
+  openMenu('Réglages','Flix Home 1.5',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
