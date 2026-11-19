@@ -139,6 +139,15 @@
                 if (method === 'switch') return 'switch';
                 // Instantané : l'image de la source s'affiche dans Flix Home, sans lancer d'autre app.
                 if (method === 'inapp') return show().then(function () { return 'inapp'; });
+                // Rapide + Mode Jeu : l'image s'affiche tout de suite dans Flix Home, puis le lecteur
+                // Samsung passe devant sans rebasculer (image déjà synchronisée, pas d'écran noir).
+                // Le lecteur au premier plan rend le Mode Jeu (auto ou manuel) disponible.
+                if (method === 'hybrid') {
+                    return show().then(null, function () {}).then(function () {
+                        if (window.FLIX_ON_SHOW) window.FLIX_ON_SHOW();
+                        return openViewer();
+                    }).then(function () { return 'hybrid'; });
+                }
                 return openViewer().then(function () { return 'viewer'; });
             });
         }).then(done, fallback);
