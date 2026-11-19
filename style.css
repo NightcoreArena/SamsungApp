@@ -38,7 +38,7 @@ h1,h2,p { margin:0; }
 /* Teinte de l'élément sélectionné : surface de 192×108 agrandie ×10 par la carte graphique. */
 #tints { position:absolute;left:0;top:0;opacity:.55; }
 .light #tints { opacity:.28; }
-.tint { position:absolute;left:0;top:0;width:192px;height:108px;transform:scale(10);transform-origin:0 0;opacity:0;transition:opacity .4s ease; }
+.tint { position:absolute;left:0;top:0;width:192px;height:108px;transform:scale(10);transform-origin:0 0;opacity:0; }
 #vignette { position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;
   background:linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 42%,rgba(0,0,0,.55) 100%); }
 .light #vignette { background:linear-gradient(180deg,rgba(255,250,240,.4) 0%,rgba(255,250,240,0) 30%,rgba(255,250,240,0) 50%,rgba(255,250,240,.6) 100%); }
@@ -61,7 +61,7 @@ h1,h2,p { margin:0; }
 #toolbar { display:flex;align-items:center; }
 .tool { display:flex;align-items:center;height:60px;padding:0 24px 0 18px;margin-left:12px;border-radius:30px;background:var(--surface);
   box-shadow:inset 0 0 0 1px var(--rim);color:var(--muted);font-size:22px;font-weight:500;white-space:nowrap;
-  transition:transform .16s var(--ease); }
+  }
 .tool svg { width:26px;height:26px;margin-right:10px;flex-shrink:0; }
 .tool.active { color:var(--text);box-shadow:inset 0 0 0 2px var(--blue); }
 .tool.focused { background:var(--focus);color:var(--on-focus);box-shadow:0 10px 26px rgba(0,0,0,.35);transform:scale(1.06); }
@@ -82,10 +82,10 @@ h1,h2,p { margin:0; }
 .scroll-dot { width:8px;height:8px;margin-left:8px;border-radius:4px;background:var(--subtle);opacity:.45;transition:width .2s ease,opacity .2s ease; }
 .scroll-dot.active { width:24px;opacity:1;background:var(--text); }
 #viewport { width:1808px;height:280px;padding:30px 48px 0;overflow:hidden; }
-#tiles { display:flex;flex-wrap:wrap;width:1728px;transition:transform .28s var(--ease);will-change:transform; }
+#tiles { display:flex;flex-wrap:wrap;width:1728px;transition:transform .18s var(--ease);will-change:transform; }
 
 .app { position:relative;flex-shrink:0;width:268px;height:220px;margin:0 20px 32px 0;text-align:center;overflow:visible;
-  transition:transform .18s var(--ease),opacity .2s ease;contain:layout style; }
+  contain:layout style; }
 .app:nth-child(6n) { margin-right:0; }
 
 /* Carte : fond sobre + voile de la couleur de l'app venant du haut. */
@@ -114,8 +114,8 @@ h1,h2,p { margin:0; }
 /* Anneau + ombre teintée sur un calque à part : au focus, seule son opacité change
    (la carte graphique s'en charge, rien n'est redessiné). */
 .app:after { content:'';position:absolute;z-index:3;left:0;top:6px;width:268px;height:156px;border-radius:26px;pointer-events:none;opacity:0;
-  box-shadow:0 0 0 3px var(--focus),0 0 0 7px rgba(255,255,255,.12),0 24px 60px -14px var(--app-accent,rgba(0,0,0,.6)),0 18px 36px rgba(0,0,0,.45);
-  transition:opacity .16s ease; }
+  box-shadow:0 0 0 3px var(--focus),0 0 0 7px rgba(255,255,255,.12),0 16px 32px -10px var(--app-accent,rgba(0,0,0,.6)),0 12px 24px rgba(0,0,0,.4);
+  }
 .no-glow .app:after { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(0,0,0,.45); }
 .light .app:after { box-shadow:0 0 0 3px var(--focus),0 18px 36px rgba(60,48,30,.22); }
 .app.focused:after { opacity:1; }
@@ -158,7 +158,7 @@ h1,h2,p { margin:0; }
 .sources-count { margin-left:16px;font-size:21px;font-weight:400;color:var(--blue); }
 #input-row { display:flex;margin-top:22px; }
 .input { position:relative;overflow:hidden;display:flex;align-items:center;width:304px;height:92px;padding:0 48px 0 16px;margin-right:20px;border-radius:46px;
-  background:var(--surface);box-shadow:inset 0 0 0 1px var(--rim);color:var(--text);transition:transform .16s var(--ease); }
+  background:var(--surface);box-shadow:inset 0 0 0 1px var(--rim);color:var(--text); }
 .input-symbol { width:60px;height:60px;padding:15px;flex-shrink:0;margin-right:14px;border-radius:30px;background:var(--surface-2);color:var(--muted); }
 .input-copy { display:block;min-width:0; }
 .input-name { display:block;max-width:180px;font-size:24px;font-weight:600;line-height:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }

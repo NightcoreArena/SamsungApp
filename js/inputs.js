@@ -1,22 +1,27 @@
-/* HDMI inputs via tizen.systeminfo (VIDEOSOURCE) and tizen.tvwindow.
+/* HDMI inputs via tizen.systeminfo (VIDEOSOURCE), tizen.tvwindow et le lecteur TV Samsung.
  *
- * Ouverture d'une source (méthode « viewer », par défaut) :
- *   1. tvwindow.setSource() bascule l'entrée de la TV ;
- *   2. courte pause, le temps que la TV prenne la source ;
- *   3. lancement du lecteur TV natif de Samsung (org.tizen.tv-viewer).
- * C'est la TV elle-même qui affiche alors l'appareil : ses réglages par entrée
- * (Mode Jeu auto / ALLM, type d'appareil PC ou console, Input Signal Plus, VRR)
- * s'appliquent comme si l'on avait choisi la source dans le menu Samsung.
- * Si une étape échoue, on ouvre le sélecteur de sources Samsung : l'utilisateur
- * n'est jamais bloqué.
+ * Ouverture d'une source (méthode « samsung », par défaut), sans attente inutile :
+ *   1. on reprend l'objet source déjà connu (Samsung refuse un objet reconstruit à la main),
+ *      sans relire la liste auprès de la TV ;
+ *   2. tvwindow.setSource() bascule l'entrée ;
+ *   3. aussitôt, on ouvre le lecteur TV Samsung (org.tizen.tv-viewer) avec les mêmes
+ *      paramètres que son propre menu Sources (change_source / sourceType / mbrIndex).
+ *      C'est alors la TV qui affiche l'appareil, comme si on l'avait choisi dans le menu
+ *      Samsung : bandeau de source, Mode Jeu auto (ALLM), type PC/console, VRR…
+ *      Si un firmware ignore ces paramètres, le lecteur s'ouvre quand même sur la source
+ *      réglée à l'étape 2 : on retombe sur l'ancien comportement, sans blocage.
+ * Méthodes de secours, au choix par source : « viewer » (setSource puis lecteur simple)
+ * et « switch » (setSource seul). Si tout échoue, le menu des sources Samsung s'ouvre.
  */
 (function () {
     'use strict';
 
     var VIEWER_APP = 'org.tizen.tv-viewer';
     var SOURCE_APP = 'org.tizen.SMSourceAPP';
-    var SETTLE_MS = 300;
     var CACHE_MS = 1500;
+    // Identifiant de source du lecteur Samsung : HDMI 1 = 13 (relevé sur firmware Samsung),
+    // les ports suivants à la suite (HDMI 2 = 14, HDMI 3 = 15, HDMI 4 = 16).
+    var HDMI_SOURCE_ID = 12;
 
     var cache = null, cacheAt = 0, pending = null;
 
@@ -59,11 +64,19 @@
         return status;
     }
 
+    function pick(info, n) {
+        var all = (info && (info.connected || []).concat(info.disconnected || [])) || [];
+        for (var i = 0; i < all.length; i++) if (all[i].type === 'HDMI' && all[i].number === n) return all[i];
+        return null;
+    }
+    // L'objet source déjà connu suffit (pas de relecture : c'était une attente à chaque clic).
     function findHdmi(n) {
+        var known = pick(cache, n);
+        if (known) return Promise.resolve(known);
         return sources(true).then(function (info) {
-            var all = (info.connected || []).concat(info.disconnected || []);
-            for (var i = 0; i < all.length; i++) if (all[i].type === 'HDMI' && all[i].number === n) return all[i];
-            throw new Error('HDMI ' + n + ' n\'est pas signalé par la TV');
+            var src = pick(info, n);
+            if (!src) throw new Error('HDMI ' + n + ' n\'est pas signalé par la TV');
+            return src;
         });
     }
 
@@ -78,7 +91,20 @@
     function openViewer() { return Apps.launch(VIEWER_APP); }
     function openPicker() { return Apps.launch(SOURCE_APP); }
 
-    // Résout 'viewer' (lecteur TV natif), 'switch' (source changée seulement) ou 'picker' (repli).
+    // Le lecteur TV avec les paramètres du menu Sources Samsung.
+    function openNative(n) {
+        return call(function (ok, err) {
+            var id = String(HDMI_SOURCE_ID + n);
+            var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null, [
+                new tizen.ApplicationControlData('change_source', [id]),
+                new tizen.ApplicationControlData('sourceType', [id]),
+                new tizen.ApplicationControlData('mbrIndex', ['-2'])
+            ]);
+            tizen.application.launchAppControl(ctrl, VIEWER_APP, ok, err);
+        }, 'Lecteur TV');
+    }
+
+    // Résout 'samsung', 'viewer', 'switch' ou 'picker' (repli sur le menu des sources).
     var busy = false;
     function open(hdmi, method) {
         if (busy) return Promise.reject(new Error('Changement de source déjà en cours'));
@@ -89,10 +115,14 @@
                 function () { busy = false; throw err; });
         };
         return findHdmi(hdmi).then(function (src) {
-            return setSource(src).then(function () {
-                invalidate();
+            var switched = setSource(src).then(function () { invalidate(); return true; },
+                function (e) { if (method !== 'samsung') throw e; return false; });
+            return switched.then(function () {
                 if (method === 'switch') return 'switch';
-                return delay(SETTLE_MS).then(openViewer).then(function () { return 'viewer'; });
+                if (method === 'viewer') return openViewer().then(function () { return 'viewer'; });
+                // Lecteur avec paramètres natifs ; s'il refuse, lecteur simple.
+                return openNative(hdmi).then(function () { return 'samsung'; },
+                    function () { return openViewer().then(function () { return 'viewer'; }); });
             });
         }).then(done, fallback);
     }
@@ -106,6 +136,7 @@
         open: open,
         hide: hide,
         openViewer: openViewer,
-        openPicker: openPicker
+        openPicker: openPicker,
+        openNative: openNative
     };
 })();

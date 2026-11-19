@@ -91,7 +91,7 @@
  function setTint(color){
   tintWanted=color;clearTimeout(tintTimer);
   if(color===tintColor)return;
-  tintTimer=setTimeout(applyTint,220);
+  tintTimer=setTimeout(applyTint,150);
  }
  function applyTint(){
   var color=tintWanted;if(color===tintColor)return;tintColor=color;
@@ -195,6 +195,10 @@
  }
  function openedLabel(a){var t=prefs.opened[a.id];return t?' · ouverte '+ago(t):'';}
 
+ function focusLastApp(){
+  if(!prefs.lastApp||mode!=='home')return;
+  for(var k=0;k<items.length;k++)if(items[k].app&&items[k].app.id===prefs.lastApp){section=1;index=k;return;}
+ }
  function setFav(a,on){
   if(on&&!isFav(a.id))prefs.order.push(a.id);
   if(!on)prefs.order=prefs.order.filter(function(id){return id!==a.id;});
@@ -302,9 +306,9 @@
  ];
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
  var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
- var METHODS={viewer:'TV Samsung',switch:'Source seule'};
+ var METHODS={samsung:'Samsung (natif)',simple:'Lecteur TV simple',switch:'Source seule'},METHOD_ORDER=['samsung','simple','switch'];
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
- function inputMethod(a){return prefs.inputMethods[a.hdmi]==='switch'?'switch':'viewer';}
+ function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return m==='switch'||m==='simple'?m:'samsung';}
  function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
  function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
@@ -339,8 +343,9 @@
  function openInput(a){
   var name=inputLabel(a);
   if(preview){toast('Aperçu : passage sur '+name);return;}
-  toast(a.connected?'Passage sur '+name+'…':name+' semble éteint, passage quand même…');
-  Inputs.open(a.hdmi,inputMethod(a)).then(function(r){
+  toast(a.connected?name+'…':name+' semble éteint, passage quand même…');
+  var m=inputMethod(a);
+  Inputs.open(a.hdmi,m==='simple'?'viewer':m).then(function(r){
    if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;save();renderInputs();}
    if(r==='picker')toast('Choisissez '+name+' dans le menu des sources Samsung.');
   },failure);
@@ -349,7 +354,7 @@
   var m=inputMethod(a);
   openMenu(inputLabel(a),'HDMI '+a.hdmi+(a.connected?' · allumé':' · éteint'),[
    {label:'Renommer',detail:inputLabel(a),icon:I.rename,run:function(){renameInput(a);}},
-   {label:'Ouverture',detail:METHODS[m],icon:I.open,keep:true,run:function(){prefs.inputMethods[a.hdmi]=m==='viewer'?'switch':'viewer';save();inputMenu(a);menu.index=1;focus();}},
+   {label:'Ouverture',detail:METHODS[m],icon:I.open,keep:true,run:function(){prefs.inputMethods[a.hdmi]=METHOD_ORDER[(METHOD_ORDER.indexOf(m)+1)%METHOD_ORDER.length];save();inputMenu(a);menu.index=1;focus();}},
    {label:'Type d\'appareil et Mode Jeu',detail:'Menu Samsung',icon:I.sources,run:function(){if(preview){toast('Aperçu : sources Samsung');return;}Inputs.openPicker().catch(failure);}}
   ]);
  }
@@ -461,7 +466,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.1',[
+  openMenu('Réglages','Flix Home 1.2',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Animations',detail:prefs.reduceMotion?'Réduites':'Normales',icon:I.motion,keep:true,run:function(){prefs.reduceMotion=!prefs.reduceMotion;save();appearance();settings();}},
@@ -604,6 +609,11 @@
  window.addEventListener('blur',function(){clearTimeout(hold);hold=null;held=false;clearHolding();});
 
  // ── chargement ──────────────────────────────────────────────────────────
+ // Liste des apps gardée en mémoire : au démarrage, l'accueil s'affiche tout de suite
+ // avec la dernière liste connue, puis se met à jour quand la TV a répondu.
+ var APPS_KEY='flixhome.apps.v1';
+ function cachedApps(){try{var c=JSON.parse(localStorage.getItem(APPS_KEY));return Array.isArray(c)?c:null;}catch(e){return null;}}
+ function storeApps(list){try{localStorage.setItem(APPS_KEY,JSON.stringify(list.map(function(a){return{id:a.id,name:a.name,label:a.label,iconPath:a.iconPath||''};})));}catch(e){}}
  function load(force){
   appsLoadedAt=Date.now();
   if(preview){
@@ -612,7 +622,11 @@
    inputs=window.FLIX_PREVIEW_INPUTS||[{hdmi:1,label:'HDMI 1',connected:true},{hdmi:2,label:'HDMI 2',connected:false},{hdmi:3,label:'HDMI 3',connected:false},{id:'org.tizen.tv-viewer',label:'Télévision'}];
    hasApps=true;renderTiles(true);renderInputs();toolbar();focus();return;
   }
-  if(!hasApps){loadingApps=true;renderTiles(true);focus();}
+  if(!hasApps){
+   var c=cachedApps();
+   if(c&&c.length){installed=c;hasApps=true;installedIds='cache';renderTiles(true);focusLastApp();focus();}
+   else{loadingApps=true;renderTiles(true);focus();}
+  }
   Apps.getInstalledApps().then(function(list){
    loadingApps=false;
    installed=Apps.launchable(list).filter(function(a){return Apps.describe(a).consumer||defaults.indexOf(a.id)>=0;});
@@ -621,9 +635,9 @@
    hasApps=true;
    // Rien de neuf (retour sur l'accueil) : pas de reconstruction, pas de clignotement.
    if(!force&&ids===installedIds&&tilesHash)return;
-   var first=!installedIds;installedIds=ids;renderTiles(true);
+   var first=!installedIds||installedIds==='cache';installedIds=ids;storeApps(installed);renderTiles(true);
    // Au démarrage, le focus revient sur la dernière app ouverte.
-   if(first&&prefs.lastApp&&mode==='home'){for(var k=0;k<items.length;k++)if(items[k].app&&items[k].app.id===prefs.lastApp){section=1;index=k;break;}}
+   if(first&&section===1&&index===0)focusLastApp();
    focus();
   },function(e){loadingApps=false;renderTiles(true);focus();failure(e);});
   Inputs.sources(true).then(function(info){inputs=buildInputs(info);renderInputs();updateHero();},
@@ -645,5 +659,7 @@
  setInterval(function(){refreshInputs(false);},10000);
  setInterval(function(){weather();},15*60000);
  window.FlixHome={state:function(){return{mode:mode,section:section,index:index,picked:picked,order:prefs.order.slice(),menu:menu&&menu.options.map(function(o){return o.label;})};}};
- scale();appearance();clock();scheduleClock();toolbar();load();poke();weather(true);
+ scale();appearance();clock();scheduleClock();toolbar();load();poke();
+ // La météo attend que l'accueil soit affiché, pour ne pas ralentir le démarrage.
+ setTimeout(function(){weather(true);},4000);
 }());
