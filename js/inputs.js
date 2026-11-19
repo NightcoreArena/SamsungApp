@@ -3,9 +3,10 @@
  * Ouverture d'une source (méthode « samsung », par défaut), sans attente inutile :
  *   1. on reprend l'objet source déjà connu (Samsung refuse un objet reconstruit à la main),
  *      sans relire la liste auprès de la TV ;
- *   2. tvwindow.setSource() bascule l'entrée ;
- *   3. aussitôt, on ouvre le lecteur TV Samsung (org.tizen.tv-viewer) avec les mêmes
- *      paramètres que son propre menu Sources (change_source / sourceType / mbrIndex).
+ *   2. on ouvre directement le lecteur TV Samsung (org.tizen.tv-viewer) avec les mêmes
+ *      paramètres que son propre menu Sources (change_source / sourceType / mbrIndex) :
+ *      une seule bascule, donc une seule resynchronisation HDMI ;
+ *   3. s'il refuse, tvwindow.setSource() puis lecteur simple.
  *      C'est alors la TV qui affiche l'appareil, comme si on l'avait choisi dans le menu
  *      Samsung : bandeau de source, Mode Jeu auto (ALLM), type PC/console, VRR…
  *      Si un firmware ignore ces paramètres, le lecteur s'ouvre quand même sur la source
@@ -119,19 +120,26 @@
                 function () { busy = false; throw err; });
         };
         var t0 = Date.now(); window.FLIX_SWITCH_T = { start: t0, method: method };
+        // Samsung (natif) : une seule bascule, faite par le lecteur Samsung comme son menu Sources.
+        // (Régler d'abord la source nous-mêmes faisait basculer deux fois : deux resynchronisations
+        // HDMI, soit deux écrans noirs.) S'il refuse, on règle la source puis on ouvre le lecteur.
+        if (method === 'samsung' && window.tizen && tizen.ApplicationControl) {
+            return openNative(hdmi).then(function () {
+                window.FLIX_SWITCH_T.setSource = Date.now() - t0;
+                return 'samsung';
+            }, function () {
+                return findHdmi(hdmi).then(setSource).then(openViewer).then(function () { return 'viewer'; });
+            }).then(done, fallback);
+        }
         return findHdmi(hdmi).then(function (src) {
             window.FLIX_SWITCH_T.found = Date.now() - t0;
-            var switched = setSource(src).then(function () { invalidate(); return true; },
-                function (e) { if (method !== 'samsung') throw e; return false; });
-            return switched.then(function () {
+            return setSource(src).then(function () {
+                invalidate();
                 window.FLIX_SWITCH_T.setSource = Date.now() - t0;
                 if (method === 'switch') return 'switch';
                 // Instantané : l'image de la source s'affiche dans Flix Home, sans lancer d'autre app.
                 if (method === 'inapp') return show().then(function () { return 'inapp'; });
-                if (method === 'viewer') return openViewer().then(function () { return 'viewer'; });
-                // Lecteur avec paramètres natifs ; s'il refuse, lecteur simple.
-                return openNative(hdmi).then(function () { return 'samsung'; },
-                    function () { return openViewer().then(function () { return 'viewer'; }); });
+                return openViewer().then(function () { return 'viewer'; });
             });
         }).then(done, fallback);
     }
