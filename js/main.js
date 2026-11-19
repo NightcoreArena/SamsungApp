@@ -352,6 +352,7 @@
   var m=inputMethod(a);
   // Réponse immédiate à l'appui : écran noir avec le nom, pendant que la TV bascule.
   switching(name,a.connected);
+  watchHandoff=m==='hybrid';
   window.FLIX_ON_SHOW=function(){watching=a;$('stage').classList.add('watching');document.documentElement.classList.add('watching');switching(null);};
   Inputs.open(a.hdmi,m==='simple'?'viewer':m).then(function(r){
    if(window.FLIX_SWITCH_T){window.FLIX_SWITCH_T.done=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
@@ -374,9 +375,13 @@
   o.classList.remove('hidden');
  }
  // Retour depuis une source affichée en mode instantané.
- function stopWatching(){
+ var watchHandoff=false,streamPending=false;
+ function hideStream(){streamPending=false;try{Inputs.hide().catch(function(){});}catch(e){}}
+ // keepStream : passage de relais au lecteur Samsung — on ne coupe pas l'image, sinon il
+ // doit rouvrir la source (nouvelle resynchronisation HDMI, écran noir, attente).
+ function stopWatching(keepStream){
   if(!watching)return;watching=null;$('stage').classList.remove('watching');document.documentElement.classList.remove('watching');
-  try{Inputs.hide().catch(function(){});}catch(e){}
+  if(keepStream)streamPending=true;else hideStream();
   renderInputs();focus();
  }
  function inputMenu(a){
@@ -714,8 +719,8 @@
  document.addEventListener('visibilitychange',function(){
   if(document.hidden){
    if(window.FLIX_SWITCH_T&&!window.FLIX_SWITCH_T.left){window.FLIX_SWITCH_T.left=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
-   clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);stopWatching();return;}
-  switching(null);if(prefs.lastInput)renderInputs();
+   clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);stopWatching(watchHandoff);return;}
+  switching(null);if(streamPending)hideStream();if(prefs.lastInput)renderInputs();
   if(ambient)setAmbient(false);else poke();
   clock();refreshInputs(true);weather();
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
