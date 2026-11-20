@@ -126,22 +126,34 @@
     // elle-même (adresse locale + origine opaque : pas d'appairage). On lui fait simuler la vraie
     // touche HDMI de la télécommande : Samsung bascule exactement comme avec la télécommande
     // (profil d'appareil, Mode Jeu…).
-    var VETRO = 'http://127.0.0.1:8099';
+    var VETRO = 'http://127.0.0.1:8099', VETRO_BASES = ['http://127.0.0.1:8099', 'http://localhost:8099'];
     var vetroState = null, vetroInfo = '';
     // Présent = le service répond. 200 : utilisable ; autre code : présent mais refuse
     // (raison gardée pour le Diagnostic). Pas de réponse : absent ou pas encore démarré.
+    function probe(base) {
+        return Apps.withTimeout(fetch(base + '/status', { cache: 'no-store' }), 3000, 'Vetro').then(function (r) {
+            return r.json().then(null, function () { return null; }).then(function (d) { return { r: r, d: d, base: base }; });
+        });
+    }
     function vetroAvailable(force) {
         if (vetroState === true && !force) return Promise.resolve(true);
-        return Apps.withTimeout(fetch(VETRO + '/status', { cache: 'no-store' }), 3000, 'Vetro').then(function (r) {
-            return r.json().then(null, function () { return null; }).then(function (d) {
-                if (r.status === 200 && !(d && d.mode === 'app-only')) { vetroState = true; vetroInfo = 'détecté' + (d && d.mode ? ' (' + d.mode + ')' : ''); return true; }
-                var seen = (d && d.seen) || {};
-                vetroState = false;
-                vetroInfo = r.status === 200 ? 'sans accès root (mode app seule)' : 'refus HTTP ' + r.status + (seen.origin ? ', origine ' + seen.origin : '') + (d && d.error ? ' : ' + d.error : '');
-                return false;
+        var lastErr = null;
+        // 127.0.0.1 d'abord, puis localhost (certains firmwares filtrent l'un des deux).
+        return VETRO_BASES.reduce(function (p, base) {
+            return p.then(function (found) {
+                if (found) return found;
+                return probe(base).then(null, function (e) { lastErr = e; return null; });
             });
-        }, function (e) {
-            vetroState = false; vetroInfo = 'pas de réponse sur 127.0.0.1:8099 (' + (e && e.message || e) + ')';
+        }, Promise.resolve(null)).then(function (res) {
+            if (!res) { vetroState = false; vetroInfo = 'pas de réponse sur le port 8099 (' + (lastErr && lastErr.message || lastErr) + ')'; return false; }
+            var r = res.r, d = res.d, seen = (d && d.seen) || {};
+            if (r.status === 200 && !(d && d.mode === 'app-only')) {
+                VETRO = res.base; vetroState = true;
+                vetroInfo = 'détecté' + (d && d.agent && d.agent.connected === false ? ' (agent root non connecté)' : '');
+                return true;
+            }
+            vetroState = false;
+            vetroInfo = r.status === 200 ? 'sans accès root (mode app seule)' : 'refus HTTP ' + r.status + (seen.origin ? ', origine ' + seen.origin : '') + (d && d.error ? ' : ' + d.error : '');
             return false;
         });
     }
@@ -153,6 +165,14 @@
             method: 'POST', mode: 'no-cors', cache: 'no-store',
             headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ cmd: cmd })
         }), 4000, 'Vetro');
+    }
+    // Verrou « new_home » du démon d'image (avocd) : l'accueil Samsung le met à 1 quand il
+    // s'affiche et le remet à 0 en se fermant. Avec un autre accueil, il peut rester bloqué
+    // à 1 : réglages d'image grisés, Mode Jeu compris. On le remet à 0 (root, via Vetro).
+    var UNLOCK = 'dbus-send --system --print-reply --dest=org.tizen.tv.avoc /org/tizen/tv/avoc org.tizen.tv.avoc.AvOutputControl.SetNewHome int32:0';
+    function vetroUnlock() {
+        if (vetroState !== true) return Promise.resolve(false);
+        return vetroExec(UNLOCK).then(function () { return true; }, function () { return false; });
     }
     function vetroKey(n) { return vetroExec('/usr/bin/input_keyevent XF86DiscretHDMI' + n); }
 
@@ -167,6 +187,7 @@
                 function () { busy = false; throw err; });
         };
         var t0 = Date.now(); window.FLIX_SWITCH_T = { start: t0, method: method };
+        vetroUnlock(); // n'attend pas : la bascule ne doit pas être ralentie
         // Samsung (natif) : une seule bascule, faite par le lecteur Samsung comme son menu Sources.
         // (Régler d'abord la source nous-mêmes faisait basculer deux fois : deux resynchronisations
         // HDMI, soit deux écrans noirs.) S'il refuse, on règle la source puis on ouvre le lecteur.
@@ -199,7 +220,7 @@
                         return openViewer();
                     }).then(function () { return 'hybrid'; });
                 }
-                return openViewer().then(function () { return 'viewer'; });
+                return openViewer().then(function () { vetroUnlock(); return 'viewer'; });
             });
         }).then(done, fallback);
     }
@@ -218,6 +239,7 @@
         openNative: openNative,
         vetroAvailable: vetroAvailable,
         vetroStatus: vetroStatus,
-        vetroKey: vetroKey
+        vetroKey: vetroKey,
+        vetroUnlock: vetroUnlock
     };
 })();

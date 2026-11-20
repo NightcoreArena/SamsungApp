@@ -27,7 +27,7 @@
  var tilesHash='',focusedEl=null,appsLoadedAt=0,installedIds='';
 
  // ── préférences ─────────────────────────────────────────────────────────
- var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},mbr:{},methodsV4:true,lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto',effects:'lite'};
+ var prefs={order:defaults.slice(),reduceMotion:false,glow:true,theme:'dark',inputNames:{},inputMethods:{},mbr:{},methodsV5:true,lastInput:0,ambient:true,opened:{},wallpaper:'blackhole',weather:true,city:'auto',effects:'lite'};
  try{
   var saved=JSON.parse(localStorage.getItem(KEY));
   if(saved&&Array.isArray(saved.order)){
@@ -38,8 +38,8 @@
    if(saved.inputMethods&&typeof saved.inputMethods==='object')prefs.inputMethods=saved.inputMethods;
    // 1.4 : « Instantané » ne donnait pas le Mode Jeu ; ces sources passent à « Rapide + Mode Jeu ».
    // 1.5 : retour au mode Samsung (comme le menu Sources) par défaut pour toutes les sources.
-   if(!saved.methodsV4)prefs.inputMethods={};
-   prefs.methodsV4=true;
+   if(!saved.methodsV5)prefs.inputMethods={};
+   prefs.methodsV5=true;
    if(saved.mbr&&typeof saved.mbr==='object')prefs.mbr=saved.mbr;
    prefs.lastInput=Number(saved.lastInput)||0;prefs.lastApp=typeof saved.lastApp==='string'?saved.lastApp:'';prefs.ambient=saved.ambient!==false;
    if(saved.opened&&typeof saved.opened==='object')prefs.opened=saved.opened;
@@ -314,7 +314,7 @@
  ];
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
  var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
- var METHODS={vetro:'Touche HDMI (Vetro)',simple:'Source externe (Mode Jeu)',samsung:'Lecteur Samsung seul',home:'Via l\'accueil Samsung',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',switch:'Source seule'},METHOD_ORDER=['vetro','simple','samsung','home','inapp','hybrid','switch'];
+ var METHODS={vetro:'Touche HDMI (expérimental)',simple:'Source externe (Mode Jeu)',samsung:'Lecteur Samsung seul',home:'Via l\'accueil Samsung',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',switch:'Source seule'},METHOD_ORDER=['simple','vetro','samsung','home','inapp','hybrid','switch'];
  // Profil d'appareil transmis au lecteur Samsung (mbrIndex) : non documenté ; la valeur qui
  // déclenche le Mode Jeu se trouve par essais, puis reste mémorisée pour la source.
  var MBR_VALUES=[-2,0,1,2,3,4,5,6,7,8,9,-1];
@@ -325,7 +325,9 @@
  // condition pour que le Mode Jeu (auto ou manuel) soit disponible.
  // Avec Vetro (TV rootée), la touche HDMI simulée est le défaut : c'est le chemin de la télécommande.
  var hasVetro=false;
- function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]&&(m!=='vetro'||hasVetro)?m:(hasVetro?'vetro':'simple');}
+ // Défaut : source externe + lecteur Samsung (confirmé sur S95B) ; avec Vetro, le verrou
+ // d'image d'avocd est levé à chaque bascule (voir Inputs.vetroUnlock).
+ function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]&&(m!=='vetro'||hasVetro)?m:'simple';}
  function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
  function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
@@ -523,7 +525,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.9.2',[
+  openMenu('Réglages','Flix Home 2.0',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
@@ -561,6 +563,7 @@
    {label:'Liste des sources (TV)',detail:b.sources!=null?b.sources+' ms':'—',icon:I.sources},
    {label:'Dernière bascule',detail:sw?(METHODS[sw.method==='viewer'?'simple':sw.method]||sw.method)+' : source réglée '+(sw.setSource!=null?sw.setSource:'?')+' ms'+(sw.left!=null?', Flix Home quittée '+sw.left+' ms':sw.method==='inapp'?', affichée '+sw.done+' ms':''):'aucune',icon:I.hdmi},
    {label:'Vetro (root) : tester maintenant',detail:diag.vetro||'—',icon:I.gear,keep:true,run:function(){checkVetro(true).then(function(){diagnostics();});}},
+   {label:'Débloquer les réglages d\'image',detail:'Mode Jeu grisé (Vetro)',icon:I.refresh,run:function(){checkVetro(true).then(function(v){if(!v){toast('Vetro injoignable : '+Inputs.vetroStatus());return;}Inputs.vetroUnlock().then(function(ok){toast(ok?'Verrou d\'image levé : vérifiez le Mode Jeu sur la source.':'Commande non envoyée.');});});}},
    {label:'Navigateur de la TV',detail:ua?'Chromium '+ua[1]:'?',icon:I.gear},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers',icon:I.glow}
   ];
@@ -746,7 +749,7 @@
    clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);stopWatching(watchHandoff);return;}
   switching(null);if(streamPending)hideStream();if(prefs.lastInput)renderInputs();
   if(ambient)setAmbient(false);else poke();
-  clock();refreshInputs(true);weather();if(!hasVetro)checkVetro(true);
+  clock();refreshInputs(true);weather();if(!hasVetro)checkVetro(true);else Inputs.vetroUnlock();
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
  });
  // La TV prévient dès qu'un appareil HDMI s'allume ou s'éteint : la tuile change aussitôt.
@@ -759,6 +762,6 @@
  // La météo attend que l'accueil soit affiché, pour ne pas ralentir le démarrage.
  setTimeout(function(){weather(true);},4000);
  // Vetro : le service peut démarrer après Flix Home ; on réessaie (1,5 s, 6 s, 20 s, 60 s), puis à chaque retour.
- function checkVetro(force){if(preview)return Promise.resolve(false);return Inputs.vetroAvailable(force).then(function(v){hasVetro=v;saveDiag('vetro',Inputs.vetroStatus());return v;});}
+ function checkVetro(force){if(preview)return Promise.resolve(false);return Inputs.vetroAvailable(force).then(function(v){var was=hasVetro;hasVetro=v;saveDiag('vetro',Inputs.vetroStatus());if(v&&!was)Inputs.vetroUnlock();return v;});}
  [1500,6000,20000,60000].forEach(function(t){setTimeout(function(){if(!hasVetro)checkVetro(true);},t);});
 }());
