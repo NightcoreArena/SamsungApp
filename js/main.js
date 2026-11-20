@@ -317,7 +317,7 @@
  var METHODS={simple:'Source externe (Mode Jeu)',samsung:'Lecteur Samsung seul',home:'Via l\'accueil Samsung',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',switch:'Source seule'},METHOD_ORDER=['simple','samsung','home','inapp','hybrid','switch'];
  // Profil d'appareil transmis au lecteur Samsung (mbrIndex) : non documenté ; la valeur qui
  // déclenche le Mode Jeu se trouve par essais, puis reste mémorisée pour la source.
- var MBR_VALUES=[-2,0,1,2,3,4,5,-1];
+ var MBR_VALUES=[-2,0,1,2,3,4,5,6,7,8,9,-1];
  function mbrOf(a){var v=prefs.mbr[a.hdmi];return typeof v==='number'?v:-2;}
  function inputLabel(a){return a.hdmi&&prefs.inputNames[a.hdmi]?prefs.inputNames[a.hdmi]:a.label;}
  // Par défaut : la source du système passe sur l'entrée HDMI (tvwindow.setSource, équivalent web de
