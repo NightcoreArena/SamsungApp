@@ -314,7 +314,7 @@
  ];
  var INPUT_PRESETS=['Console','PC','Décodeur TV','Apple TV','Chromecast','Nintendo Switch','PlayStation','Xbox','Blu-ray','Raspberry Pi','Caméra'];
  var GAMING=/console|(^|\s)pc(\s|$)|playstation|xbox|switch|raspberry/i;
- var METHODS={simple:'Source externe (Mode Jeu)',samsung:'Lecteur Samsung seul',home:'Via l\'accueil Samsung',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',switch:'Source seule'},METHOD_ORDER=['simple','samsung','home','inapp','hybrid','switch'];
+ var METHODS={vetro:'Touche HDMI (Vetro)',simple:'Source externe (Mode Jeu)',samsung:'Lecteur Samsung seul',home:'Via l\'accueil Samsung',inapp:'Instantané (sans Mode Jeu)',hybrid:'Image directe + lecteur Samsung',switch:'Source seule'},METHOD_ORDER=['vetro','simple','samsung','home','inapp','hybrid','switch'];
  // Profil d'appareil transmis au lecteur Samsung (mbrIndex) : non documenté ; la valeur qui
  // déclenche le Mode Jeu se trouve par essais, puis reste mémorisée pour la source.
  var MBR_VALUES=[-2,0,1,2,3,4,5,6,7,8,9,-1];
@@ -323,7 +323,9 @@
  // Par défaut : la source du système passe sur l'entrée HDMI (tvwindow.setSource, équivalent web de
  // connect_source), puis le lecteur Samsung s'ouvre. La TV considère alors une source externe active,
  // condition pour que le Mode Jeu (auto ou manuel) soit disponible.
- function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]?m:'simple';}
+ // Avec Vetro (TV rootée), la touche HDMI simulée est le défaut : c'est le chemin de la télécommande.
+ var hasVetro=false;
+ function inputMethod(a){var m=prefs.inputMethods[a.hdmi];return METHODS[m]&&(m!=='vetro'||hasVetro)?m:(hasVetro?'vetro':'simple');}
  function iconFor(name){for(var i=0;i<DEVICE_ICONS.length;i++)if(DEVICE_ICONS[i][0].test(name))return DEVICE_ICONS[i][1];return I.hdmi;}
  function deviceIcon(a){return a.hdmi?iconFor(inputLabel(a)):I.tv;}
  function renderInputs(){
@@ -367,6 +369,16 @@
    if(window.FLIX_SWITCH_T){window.FLIX_SWITCH_T.done=Date.now()-window.FLIX_SWITCH_T.start;saveDiag('switch',window.FLIX_SWITCH_T);}
    if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;}
    if(r==='hybrid'){if(!watching)window.FLIX_ON_SHOW();return;}
+   if(r==='vetro'){
+    var tKey=Date.now();
+    setTimeout(function(){
+     if(document.hidden||Date.now()-tKey>6000)return;
+     // La touche n'a rien fait (nom de touche inconnu de ce firmware) : ancienne méthode.
+     saveDiag('vetroKey','sans effet');
+     Inputs.open(a.hdmi,'viewer',name).then(function(){},function(e){switching(null);failure(e);});
+    },3000);
+    return;
+   }
    if(r==='home'){switching(null);toast('Choisissez '+name+' dans Sources : le Mode Jeu s\'appliquera.');return;}
    if(r==='inapp'){watching=a;$('stage').classList.add('watching');document.documentElement.classList.add('watching');switching(null);return;}
    if(r==='picker'){switching(null);toast('Choisissez '+name+' dans le menu des sources Samsung.');}
@@ -515,7 +527,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.8',[
+  openMenu('Réglages','Flix Home 1.9',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
@@ -552,6 +564,7 @@
    {label:'Liste des apps (TV)',detail:b.apps!=null?b.apps+' ms':'—',icon:I.grid},
    {label:'Liste des sources (TV)',detail:b.sources!=null?b.sources+' ms':'—',icon:I.sources},
    {label:'Dernière bascule',detail:sw?(METHODS[sw.method==='viewer'?'simple':sw.method]||sw.method)+' : source réglée '+(sw.setSource!=null?sw.setSource:'?')+' ms'+(sw.left!=null?', Flix Home quittée '+sw.left+' ms':sw.method==='inapp'?', affichée '+sw.done+' ms':''):'aucune',icon:I.hdmi},
+   {label:'Vetro (root)',detail:(diag.vetro||'—')+(diag.vetroKey?' · touche HDMI '+diag.vetroKey:''),icon:I.gear},
    {label:'Navigateur de la TV',detail:ua?'Chromium '+ua[1]:'?',icon:I.gear},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers',icon:I.glow}
   ];
@@ -749,4 +762,5 @@
  scale();appearance();clock();scheduleClock();toolbar();load();poke();
  // La météo attend que l'accueil soit affiché, pour ne pas ralentir le démarrage.
  setTimeout(function(){weather(true);},4000);
+ if(!preview)setTimeout(function(){Inputs.vetroAvailable().then(function(v){hasVetro=v;saveDiag('vetro',v?'détecté':'absent');});},1500);
 }());

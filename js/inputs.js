@@ -121,6 +121,32 @@
         return send(true).then(null, function () { return send(false); });
     }
 
+    // ── Vetro (TV rootée) ───────────────────────────────────────────────────
+    // Le service local de Vetro (port 8099) exécute des commandes root pour les apps de la TV
+    // elle-même (adresse locale + origine opaque : pas d'appairage). On lui fait simuler la vraie
+    // touche HDMI de la télécommande : Samsung bascule exactement comme avec la télécommande
+    // (profil d'appareil, Mode Jeu…).
+    var VETRO = 'http://127.0.0.1:8099';
+    var vetroState = null; // null = inconnu, true/false après détection
+    function vetroAvailable(force) {
+        if (vetroState !== null && !force) return Promise.resolve(vetroState);
+        return Apps.withTimeout(fetch(VETRO + '/status', { cache: 'no-store' }).then(function (r) {
+            return r.ok ? r.json() : null;
+        }), 2500, 'Vetro').then(function (d) {
+            vetroState = !!(d && d.mode && d.mode !== 'app-only');
+            return vetroState;
+        }, function () { vetroState = false; return false; });
+    }
+    function vetroExec(cmd) {
+        // Requête « simple » (text/plain, sans en-tête particulier) : pas de pré-vérification CORS,
+        // la commande part même si la réponse n'est pas lisible. Échec seulement si Vetro est absent.
+        return Apps.withTimeout(fetch(VETRO + '/exec', {
+            method: 'POST', mode: 'no-cors', cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ cmd: cmd })
+        }), 4000, 'Vetro');
+    }
+    function vetroKey(n) { return vetroExec('/usr/bin/input_keyevent XF86DiscretHDMI' + n); }
+
     // Résout 'samsung', 'viewer', 'switch' ou 'picker' (repli sur le menu des sources).
     var busy = false;
     function open(hdmi, method, label, mbr) {
@@ -136,6 +162,8 @@
         // (Régler d'abord la source nous-mêmes faisait basculer deux fois : deux resynchronisations
         // HDMI, soit deux écrans noirs.) S'il refuse, on règle la source puis on ouvre le lecteur.
         // Via l'accueil Samsung : on ouvre son accueil, l'utilisateur choisit la source (Mode Jeu garanti).
+        // Touche HDMI simulée par Vetro : la TV fait tout, comme avec la télécommande.
+        if (method === 'vetro') return vetroKey(hdmi).then(function () { window.FLIX_SWITCH_T.setSource = Date.now() - t0; return 'vetro'; }).then(done, fallback);
         if (method === 'home') return Apps.launch('com.samsung.tv.csfs').then(function () { return 'home'; }).then(done, fallback);
         if (method === 'samsung' && window.tizen && tizen.ApplicationControl) {
             return openNative(hdmi, label, mbr).then(function () {
@@ -178,6 +206,8 @@
         show: show,
         openViewer: openViewer,
         openPicker: openPicker,
-        openNative: openNative
+        openNative: openNative,
+        vetroAvailable: vetroAvailable,
+        vetroKey: vetroKey
     };
 })();
