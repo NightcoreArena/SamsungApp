@@ -102,11 +102,11 @@
     // et demandeur « user ». Sans ces champs, le lecteur bascule par un chemin de repli qui
     // n'applique pas les réglages de l'entrée (Mode Jeu…).
     var ICON_DIR = '/usr/apps/com.samsung.tv.theme-resource/shared/res/org.tizen.menu/Settings_Popup/device_icon/';
-    function openNative(n, name) {
+    function openNative(n, name, mbr) {
         var id = String(HDMI_SOURCE_ID + n);
         var fields = [
             ['change_source', id], ['sourceType', id], ['sourceName', name || 'HDMI ' + n],
-            ['sourceIcon', ICON_DIR + 'r_icon_device_s_hdmi' + n + '.png'], ['mbrIndex', '-2']
+            ['sourceIcon', ICON_DIR + 'r_icon_device_s_hdmi' + n + '.png'], ['mbrIndex', String(mbr == null ? -2 : mbr)]
         ];
         function send(withRequestor) {
             return call(function (ok, err) {
@@ -123,7 +123,7 @@
 
     // Résout 'samsung', 'viewer', 'switch' ou 'picker' (repli sur le menu des sources).
     var busy = false;
-    function open(hdmi, method, label) {
+    function open(hdmi, method, label, mbr) {
         if (busy) return Promise.reject(new Error('Changement de source déjà en cours'));
         busy = true;
         var done = function (v) { busy = false; return v; };
@@ -135,8 +135,10 @@
         // Samsung (natif) : une seule bascule, faite par le lecteur Samsung comme son menu Sources.
         // (Régler d'abord la source nous-mêmes faisait basculer deux fois : deux resynchronisations
         // HDMI, soit deux écrans noirs.) S'il refuse, on règle la source puis on ouvre le lecteur.
+        // Via l'accueil Samsung : on ouvre son accueil, l'utilisateur choisit la source (Mode Jeu garanti).
+        if (method === 'home') return Apps.launch('com.samsung.tv.csfs').then(function () { return 'home'; }).then(done, fallback);
         if (method === 'samsung' && window.tizen && tizen.ApplicationControl) {
-            return openNative(hdmi, label).then(function () {
+            return openNative(hdmi, label, mbr).then(function () {
                 window.FLIX_SWITCH_T.setSource = Date.now() - t0;
                 return 'samsung';
             }, function () {
