@@ -370,13 +370,9 @@
    if(prefs.lastInput!==a.hdmi){prefs.lastInput=a.hdmi;}
    if(r==='hybrid'){if(!watching)window.FLIX_ON_SHOW();return;}
    if(r==='vetro'){
-    var tKey=Date.now();
-    setTimeout(function(){
-     if(document.hidden||Date.now()-tKey>6000)return;
-     // La touche n'a rien fait (nom de touche inconnu de ce firmware) : ancienne méthode.
-     saveDiag('vetroKey','sans effet');
-     Inputs.open(a.hdmi,'viewer',name).then(function(){},function(e){switching(null);failure(e);});
-    },3000);
+    // La TV fait toute la bascule elle-même (comme la télécommande). Flix Home ne touche plus
+    // à rien : un second changement de source par-dessus faisait « grésiller » l'image.
+    switchTimer=setTimeout(function(){switching(null);},2500);
     return;
    }
    if(r==='home'){switching(null);toast('Choisissez '+name+' dans Sources : le Mode Jeu s\'appliquera.');return;}
@@ -527,7 +523,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.9',[
+  openMenu('Réglages','Flix Home 1.9.1',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
