@@ -127,16 +127,25 @@
     // touche HDMI de la télécommande : Samsung bascule exactement comme avec la télécommande
     // (profil d'appareil, Mode Jeu…).
     var VETRO = 'http://127.0.0.1:8099';
-    var vetroState = null; // null = inconnu, true/false après détection
+    var vetroState = null, vetroInfo = '';
+    // Présent = le service répond. 200 : utilisable ; autre code : présent mais refuse
+    // (raison gardée pour le Diagnostic). Pas de réponse : absent ou pas encore démarré.
     function vetroAvailable(force) {
-        if (vetroState !== null && !force) return Promise.resolve(vetroState);
-        return Apps.withTimeout(fetch(VETRO + '/status', { cache: 'no-store' }).then(function (r) {
-            return r.ok ? r.json() : null;
-        }), 2500, 'Vetro').then(function (d) {
-            vetroState = !!(d && d.mode && d.mode !== 'app-only');
-            return vetroState;
-        }, function () { vetroState = false; return false; });
+        if (vetroState === true && !force) return Promise.resolve(true);
+        return Apps.withTimeout(fetch(VETRO + '/status', { cache: 'no-store' }), 3000, 'Vetro').then(function (r) {
+            return r.json().then(null, function () { return null; }).then(function (d) {
+                if (r.status === 200 && !(d && d.mode === 'app-only')) { vetroState = true; vetroInfo = 'détecté' + (d && d.mode ? ' (' + d.mode + ')' : ''); return true; }
+                var seen = (d && d.seen) || {};
+                vetroState = false;
+                vetroInfo = r.status === 200 ? 'sans accès root (mode app seule)' : 'refus HTTP ' + r.status + (seen.origin ? ', origine ' + seen.origin : '') + (d && d.error ? ' : ' + d.error : '');
+                return false;
+            });
+        }, function (e) {
+            vetroState = false; vetroInfo = 'pas de réponse sur 127.0.0.1:8099 (' + (e && e.message || e) + ')';
+            return false;
+        });
     }
+    function vetroStatus() { return vetroInfo || 'pas encore testé'; }
     function vetroExec(cmd) {
         // Requête « simple » (text/plain, sans en-tête particulier) : pas de pré-vérification CORS,
         // la commande part même si la réponse n'est pas lisible. Échec seulement si Vetro est absent.
@@ -208,6 +217,7 @@
         openPicker: openPicker,
         openNative: openNative,
         vetroAvailable: vetroAvailable,
+        vetroStatus: vetroStatus,
         vetroKey: vetroKey
     };
 })();

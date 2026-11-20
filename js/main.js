@@ -523,7 +523,7 @@
  }
 
  function settings(){
-  openMenu('Réglages','Flix Home 1.9.1',[
+  openMenu('Réglages','Flix Home 1.9.2',[
    {label:'Thème',detail:prefs.theme==='dark'?'Sombre':'Clair',icon:prefs.theme==='dark'?I.moon:I.sun,keep:true,run:function(){prefs.theme=prefs.theme==='dark'?'light':'dark';save();appearance();renderTiles(true);settings();}},
    {label:'Lueur des tuiles',detail:prefs.glow?'Activée':'Désactivée',icon:I.glow,keep:true,run:function(){prefs.glow=!prefs.glow;save();appearance();settings();}},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers (rapide)',icon:I.motion,keep:true,run:function(){prefs.effects=prefs.effects==='full'?'lite':'full';save();appearance();settings();}},
@@ -560,11 +560,11 @@
    {label:'Liste des apps (TV)',detail:b.apps!=null?b.apps+' ms':'—',icon:I.grid},
    {label:'Liste des sources (TV)',detail:b.sources!=null?b.sources+' ms':'—',icon:I.sources},
    {label:'Dernière bascule',detail:sw?(METHODS[sw.method==='viewer'?'simple':sw.method]||sw.method)+' : source réglée '+(sw.setSource!=null?sw.setSource:'?')+' ms'+(sw.left!=null?', Flix Home quittée '+sw.left+' ms':sw.method==='inapp'?', affichée '+sw.done+' ms':''):'aucune',icon:I.hdmi},
-   {label:'Vetro (root)',detail:(diag.vetro||'—')+(diag.vetroKey?' · touche HDMI '+diag.vetroKey:''),icon:I.gear},
+   {label:'Vetro (root) : tester maintenant',detail:diag.vetro||'—',icon:I.gear,keep:true,run:function(){checkVetro(true).then(function(){diagnostics();});}},
    {label:'Navigateur de la TV',detail:ua?'Chromium '+ua[1]:'?',icon:I.gear},
    {label:'Effets visuels',detail:prefs.effects==='full'?'Complets':'Légers',icon:I.glow}
   ];
-  rows.forEach(function(r){r.run=function(){};});
+  rows.forEach(function(r){if(!r.run)r.run=function(){};});
   openMenu('Diagnostic','Faites une capture de cet écran et envoyez-la : elle montre où part le temps.',rows);
  }
 
@@ -746,7 +746,7 @@
    clearTimeout(hold);hold=null;held=false;clearTimeout(ambientTimer);if(picked>=0)dropPicked(true);stopWatching(watchHandoff);return;}
   switching(null);if(streamPending)hideStream();if(prefs.lastInput)renderInputs();
   if(ambient)setAmbient(false);else poke();
-  clock();refreshInputs(true);weather();
+  clock();refreshInputs(true);weather();if(!hasVetro)checkVetro(true);
   if(!preview&&Date.now()-appsLoadedAt>60000)load();
  });
  // La TV prévient dès qu'un appareil HDMI s'allume ou s'éteint : la tuile change aussitôt.
@@ -758,5 +758,7 @@
  scale();appearance();clock();scheduleClock();toolbar();load();poke();
  // La météo attend que l'accueil soit affiché, pour ne pas ralentir le démarrage.
  setTimeout(function(){weather(true);},4000);
- if(!preview)setTimeout(function(){Inputs.vetroAvailable().then(function(v){hasVetro=v;saveDiag('vetro',v?'détecté':'absent');});},1500);
+ // Vetro : le service peut démarrer après Flix Home ; on réessaie (1,5 s, 6 s, 20 s, 60 s), puis à chaque retour.
+ function checkVetro(force){if(preview)return Promise.resolve(false);return Inputs.vetroAvailable(force).then(function(v){hasVetro=v;saveDiag('vetro',Inputs.vetroStatus());return v;});}
+ [1500,6000,20000,60000].forEach(function(t){setTimeout(function(){if(!hasVetro)checkVetro(true);},t);});
 }());
